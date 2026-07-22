@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 
+from .phones import to_e164
+
 
 def lead_keyboard(
     usdot: str,
@@ -12,10 +14,13 @@ def lead_keyboard(
     rows = [
         [
             InlineKeyboardButton("Copy SMS", callback_data=f"copy:{usdot}"),
-            InlineKeyboardButton("Call", callback_data=f"call:{usdot}"),
+            InlineKeyboardButton("Save / Message", callback_data=f"contact:{usdot}"),
         ],
         [
+            InlineKeyboardButton("Call info", callback_data=f"call:{usdot}"),
             InlineKeyboardButton("Email", callback_data=f"email:{usdot}"),
+        ],
+        [
             InlineKeyboardButton("Add Telegram", callback_data=f"addtg:{usdot}")
             if not telegram_username
             else InlineKeyboardButton("Telegram", url=f"https://t.me/{telegram_username.lstrip('@')}"),
@@ -33,6 +38,8 @@ def lead_keyboard(
             InlineKeyboardButton("Pitch again", callback_data=f"pitch:{usdot}"),
         ],
     ]
+    # If we somehow get http phone links later, keep structure simple.
+    _ = to_e164(phone)
     return InlineKeyboardMarkup(rows)
 
 
@@ -46,7 +53,7 @@ def search_keyboard(usdots: list[str]) -> InlineKeyboardMarkup:
 
 def share_contact_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
-        [[KeyboardButton("📱 Share my phone (link Telegram id)", request_contact=True)]],
+        [[KeyboardButton("Share my phone (link Telegram id)", request_contact=True)]],
         resize_keyboard=True,
         one_time_keyboard=True,
     )

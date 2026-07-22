@@ -119,8 +119,11 @@ def format_lead_card(
     telegram_user_id: int | None = None,
 ) -> str:
     """Plain-text lead card (no HTML)."""
+    from .phones import to_e164
+
     officer = lead.officer or "-"
-    phone = lead.phone or "-"
+    phone_raw = lead.phone or "-"
+    phone_e164 = to_e164(lead.phone) or phone_raw
     email = lead.email or "-"
     location = ", ".join(p for p in [lead.city, lead.state, lead.zip] if p) or "-"
     follow = f"\nFollow-up: {follow_up_at}" if follow_up_at else ""
@@ -138,7 +141,7 @@ def format_lead_card(
         f"{lead.truck_match_label()}\n"
         f"Location: {location}\n"
         f"Contact: {officer}\n"
-        f"Phone: {phone}\n"
+        f"Phone:\n{phone_e164}\n"
         f"Email: {email}"
         f"{tg_line}\n"
         f"Plan: {lead.suggested_plan}\n"

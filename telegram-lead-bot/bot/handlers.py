@@ -9,7 +9,7 @@ from telegram.ext import ContextTypes
 from . import config
 from .keyboards import lead_keyboard, remove_keyboard, search_keyboard, share_contact_keyboard
 from .leads import LeadStore
-from .phones import normalize_phone
+from .phones import contact_name_parts, normalize_phone, to_e164
 from .pitches import copy_text_version, format_lead_card, personalized_pitch
 
 log = logging.getLogger(__name__)
@@ -53,6 +53,26 @@ def _sender_bits(update: Update, context: ContextTypes.DEFAULT_TYPE) -> tuple[st
     return store(context).resolve_sender(user.id if user else 0, fallback)
 
 
+async def send_lead_contact(message, lead) -> bool:
+    """Send a tappable Telegram contact card (save / call / message)."""
+    phone = to_e164(lead.phone)
+    if not phone:
+        await message.reply_text("No phone number on file for this lead.")
+        return False
+    first, last = contact_name_parts(lead.officer, lead.company)
+    await message.reply_text(
+        "Tap the contact card below to Call, Message, or Save this lead."
+    )
+    await message.reply_contact(
+        phone_number=phone,
+        first_name=first,
+        last_name=last or None,
+    )
+    # Standalone number line — many clients make this tappable too
+    await message.reply_text(phone)
+    return True
+
+
 async def send_lead(update: Update, context: ContextTypes.DEFAULT_TYPE, usdot: str) -> None:
     lead_store = store(context)
     lead = lead_store.get_lead(usdot)
@@ -81,21 +101,25 @@ async def send_lead(update: Update, context: ContextTypes.DEFAULT_TYPE, usdot: s
 
     tip = (
         f"Your name on scripts: {sender_name}\n"
-        f"Tap Copy SMS for a text ready to paste into Messages.\n"
-        f"Change with /setname Your Name"
+        f"1) Tap the contact card to Call, Message, or Save\n"
+        f"2) Tap Copy SMS, then paste into Messages\n"
+        f"Change name: /setname Your Name"
     )
+
     if update.callback_query:
+        msg = update.callback_query.message
         await update.callback_query.edit_message_text(
             card, reply_markup=keyboard, disable_web_page_preview=True
         )
-        await update.callback_query.message.reply_text(tip)
-        await update.callback_query.message.reply_text(pitch, disable_web_page_preview=True)
+        await send_lead_contact(msg, lead)
+        await msg.reply_text(tip)
+        await msg.reply_text(pitch, disable_web_page_preview=True)
     elif update.effective_message:
-        await update.effective_message.reply_text(
-            card, reply_markup=keyboard, disable_web_page_preview=True
-        )
-        await update.effective_message.reply_text(tip)
-        await update.effective_message.reply_text(pitch, disable_web_page_preview=True)
+        msg = update.effective_message
+        await msg.reply_text(card, reply_markup=keyboard, disable_web_page_preview=True)
+        await send_lead_contact(msg, lead)
+        await msg.reply_text(tip)
+        await msg.reply_text(pitch, disable_web_page_preview=True)
 
 
 def _truck_kwargs() -> dict:
@@ -488,11 +512,23 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         text_block = copy_text_version(
             lead, sender_name=sender_name, sender_phone=sender_phone
         )
+        phone = to_e164(lead.phone) or lead.phone or "no phone"
         await query.message.reply_text(
-            f"SMS ready (name: {sender_name}). Long-press next message -> Copy.\n"
+            f"SMS ready (name: {sender_name}).\n"
+            f"1) Tap Save / Message (or the contact card) to open/message {phone}\n"
+            f"2) Long-press next message -> Copy -> paste into SMS\n"
             f"Change name: /setname Your Name"
         )
         await query.message.reply_text(text_block, disable_web_page_preview=True)
+        return
+
+    if data.startswith("contact:"):
+        usdot = data.split(":", 1)[1]
+        lead = lead_store.get_lead(usdot)
+        if not lead:
+            await query.message.reply_text("Lead not found.")
+            return
+        await send_lead_contact(query.message, lead)
         return
 
     if data.startswith("call:"):
@@ -501,14 +537,14 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if not lead:
             await query.message.reply_text("Lead not found.")
             return
-        phone = lead.phone or "No phone on file"
+        phone = to_e164(lead.phone) or lead.phone or "No phone on file"
         await query.message.reply_text(
-            f"📞 Call {lead.company}\n"
+            f"Call {lead.company}\n"
             f"Ask for: {lead.officer or 'owner / safety / compliance'}\n"
-            f"Number: {phone}",
-            
+            f"Number:\n{phone}\n\n"
+            f"Tip: tap the contact card to Call or Message from your phone."
         )
-        # Plain text pitch (no HTML) so & / quotes never break Telegram parsing
+        await send_lead_contact(query.message, lead)
         sn, sp = _sender_bits(update, context)
         call_pitch = personalized_pitch(lead, sender_name=sn, sender_phone=sp).split("EMAIL SUBJECT")[0].strip()
         await query.message.reply_text(call_pitch, disable_web_page_preview=True)

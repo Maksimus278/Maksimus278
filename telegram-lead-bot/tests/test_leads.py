@@ -93,6 +93,17 @@ class LeadBotTests(unittest.TestCase):
         )
         self.assertIn("Sam Fleet", text)
 
+    def test_phone_e164_and_card(self):
+        from bot.phones import to_e164, contact_name_parts
+        self.assertEqual(to_e164("6023978970"), "+16023978970")
+        first, last = contact_name_parts("JANE DOE", "ACME HAULING")
+        self.assertEqual(first, "JANE")
+        lead = self.store.next_best(1, target_trucks=300, truck_min=200, truck_max=450)[0]
+        card = format_lead_card(lead)
+        self.assertIn("Phone:", card)
+        if lead.phone:
+            self.assertIn(to_e164(lead.phone), card)
+
     def test_stats(self):
         s = self.store.stats()
         self.assertIn("total_leads", s)

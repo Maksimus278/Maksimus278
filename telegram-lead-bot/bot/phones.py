@@ -20,6 +20,28 @@ def normalize_phone(raw: str | None) -> str:
     return digits
 
 
+def to_e164(raw: str | None) -> str:
+    """Return +E164 style phone for contacts / dialers, or empty string."""
+    digits = normalize_phone(raw)
+    if not digits:
+        return ""
+    return f"+{digits}"
+
+
+def contact_name_parts(officer: str = "", company: str = "") -> tuple[str, str]:
+    """Build first/last name for a Telegram contact card."""
+    officer = (officer or "").strip()
+    company = (company or "").strip()
+    if officer:
+        parts = officer.split()
+        first = parts[0][:64]
+        last = " ".join(parts[1:])[:64] if len(parts) > 1 else (company[:64] if company else "")
+        return first, last
+    if company:
+        return company[:64], "FleetGuard lead"
+    return "Fleet lead", ""
+
+
 def phone_match_keys(raw: str | None) -> set[str]:
     """Possible normalized forms for loose matching against CSV phones."""
     n = normalize_phone(raw)
