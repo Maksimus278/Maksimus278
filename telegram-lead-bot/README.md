@@ -6,11 +6,8 @@ CSV → Telegram → best lead → contact info + personalized pitch → track f
 
 | Command | Action |
 | --- | --- |
-| `/next` | Next best unworked lead + pitch |
-| `/highscore` | Highest priority leads (**300+**) |
-
-Priority scale (lowest → highest): **Low 0–99** · **Medium 100–199** · **High 200–299** · **Highest 300+**
-
+| `/next` | Next best lead near **~300 trucks** |
+| `/highscore` | Fleets closest to **~300 trucks** (200–450 band) |
 | `/search trucking company` | Find by company, DOT, city, officer |
 | `/followups` | Who needs follow-up |
 | `/stats` | Progress |
@@ -18,6 +15,9 @@ Priority scale (lowest → highest): **Low 0–99** · **Medium 100–199** · *
 | `/settg <phone\|DOT> <@user\|id>` | Manually link Telegram to a lead phone |
 | `/findtg <phone>` | Look up a saved Telegram id by phone |
 | `/tglist` | Recent phone → Telegram links |
+
+Priority = fleet size near **300 trucks** (not a 300-point score).
+
 
 **Buttons on every lead:** 📞 Call · ✉️ Email · 💬 Telegram/Add Telegram · ✅ Contacted · 🔥 Interested · 📅 Follow Up · ❌ Skip · ⏭ Next
 
