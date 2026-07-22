@@ -65,9 +65,13 @@ class LeadBotTests(unittest.TestCase):
     def test_pitch(self):
         lead = self.store.next_best(1, target_trucks=300, truck_min=200, truck_max=450)[0]
         text = personalized_pitch(lead)
-        self.assertIn("Call pitch", text)
+        self.assertIn("CALL", text)
+        self.assertIn("EMAIL BODY", text)
+        self.assertIn("fleetguardlogistics.com", text.lower())
         card = format_lead_card(lead)
-        self.assertIn("trucks", card)
+        self.assertIn("Trucks:", card)
+        self.assertNotIn("<b>", card)
+        self.assertNotIn("<code>", card)
 
     def test_stats(self):
         s = self.store.stats()

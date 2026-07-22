@@ -65,20 +65,20 @@ async def send_lead(update: Update, context: ContextTypes.DEFAULT_TYPE, usdot: s
         status=status,
         follow_up_at=follow_up_at,
         telegram_username=tg_user,
-        telegram_user_id=tg_id,
+        telegram_user_id=tg_id
     )
     pitch = personalized_pitch(lead)
     keyboard = lead_keyboard(lead.usdot, lead.phone, lead.email, telegram_username=tg_user)
 
-    # Card uses HTML; pitch is plain text (avoids Telegram HTML parse failures on & / quotes)
+    # Plain text only (card + pitch)
     if update.callback_query:
         await update.callback_query.edit_message_text(
-            card, reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True
+            card, reply_markup=keyboard, disable_web_page_preview=True
         )
         await update.callback_query.message.reply_text(pitch, disable_web_page_preview=True)
     elif update.effective_message:
         await update.effective_message.reply_text(
-            card, reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True
+            card, reply_markup=keyboard, disable_web_page_preview=True
         )
         await update.effective_message.reply_text(pitch, disable_web_page_preview=True)
 
@@ -97,23 +97,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     stats = lead_store.stats()
     await update.effective_message.reply_text(
         "FleetGuard lead bot ready.\n\n"
-        f"Loaded <b>{stats['total_leads']:,}</b> leads from CSV.\n"
-        f"Priority target: fleets with <b>~{config.TARGET_TRUCKS} trucks</b> "
+        f"Loaded {stats['total_leads']:,} leads from CSV.\n"
+        f"Priority target: fleets with ~{config.TARGET_TRUCKS} trucks "
         f"({config.TARGET_TRUCK_MIN}–{config.TARGET_TRUCK_MAX}).\n\n"
         "Commands:\n"
         "/next — next best ~300-truck lead + pitch\n"
         "/highscore — fleets closest to ~300 trucks\n"
-        "/search &lt;query&gt; — find a company / DOT / city\n"
+        "/search <query> — find a company / DOT / city\n"
         "/followups — who needs follow-up\n"
         "/stats — your progress\n"
         "/linkphone — share contact to save your phone → Telegram id\n"
-        "/settg &lt;phone|DOT&gt; &lt;@user|id&gt; — link Telegram to a lead phone\n"
-        "/findtg &lt;phone&gt; — look up a saved Telegram id by phone\n"
+        "/settg <phone|DOT> <@user|id> — link Telegram to a lead phone\n"
+        "/findtg <phone> — look up a saved Telegram id by phone\n"
         "/tglist — recent phone → Telegram links\n\n"
         "Use the buttons under each lead to call, email, and track status.\n"
-        "<i>Note: Telegram cannot auto-discover strangers’ ids from CSV phones. "
-        "Share a contact or set them with /settg.</i>",
-        parse_mode="HTML",
+        "Note: Telegram cannot auto-discover strangers’ ids from CSV phones. "
+        "Share a contact or set them with /settg.",
+        
     )
 
 
@@ -134,24 +134,23 @@ async def highscore(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     target = config.TARGET_TRUCKS
     lines = [
-        f"🚛 <b>Fleets closest to ~{target} trucks</b>\n"
-        f"<i>Band {config.TARGET_TRUCK_MIN}–{config.TARGET_TRUCK_MAX} · nearest to {target} first</i>\n",
+        f"🚛 Fleets closest to ~{target} trucks\n"
+        f"Band {config.TARGET_TRUCK_MIN}–{config.TARGET_TRUCK_MAX} · nearest to {target} first\n",
     ]
     usdots = []
     for i, (lead, status) in enumerate(rows, 1):
         usdots.append(lead.usdot)
         dist = lead.truck_distance(target)
         lines.append(
-            f"{i}. <b>{lead.company}</b> · <b>{lead.power_units} trucks</b> "
+            f"{i}. {lead.company} · {lead.power_units} trucks "
             f"(Δ{dist} from {target})\n"
-            f"   {lead.city}, {lead.state} · {status} · DOT <code>{lead.usdot}</code>\n"
+            f"   {lead.city}, {lead.state} · {status} · DOT {lead.usdot}\n"
             f"   {lead.suggested_plan} · {lead.phone or 'no phone'}"
         )
     await update.effective_message.reply_text(
         "\n".join(lines),
-        parse_mode="HTML",
         reply_markup=search_keyboard(usdots),
-        disable_web_page_preview=True,
+        disable_web_page_preview=True
     )
 
 
@@ -165,19 +164,18 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not hits:
         await update.effective_message.reply_text(f"No matches for “{query}”.")
         return
-    lines = [f"🔎 Results for <b>{query}</b>\n"]
+    lines = [f"🔎 Results for {query}\n"]
     usdots = []
     for lead in hits:
         usdots.append(lead.usdot)
         lines.append(
-            f"• <b>{lead.company}</b> · {lead.city}, {lead.state} · "
-            f"<b>{lead.power_units} trucks</b>\n"
-            f"  DOT <code>{lead.usdot}</code> · {lead.officer or '—'}"
+            f"• {lead.company} · {lead.city}, {lead.state} · "
+            f"{lead.power_units} trucks\n"
+            f"  DOT {lead.usdot} · {lead.officer or '—'}"
         )
     await update.effective_message.reply_text(
         "\n".join(lines),
-        parse_mode="HTML",
-        reply_markup=search_keyboard(usdots),
+        reply_markup=search_keyboard(usdots)
     )
 
 
@@ -187,19 +185,18 @@ async def followups(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not rows:
         await update.effective_message.reply_text("No follow-ups queued. Mark leads with 📅 Follow Up.")
         return
-    lines = ["📅 <b>Follow-ups</b>\n"]
+    lines = ["📅 Follow-ups\n"]
     usdots = []
     for lead, state in rows:
         usdots.append(lead.usdot)
         when = state["follow_up_at"] or state["updated_at"] or "—"
         lines.append(
-            f"• <b>{lead.company}</b> · {lead.phone or 'no phone'}\n"
-            f"  DOT <code>{lead.usdot}</code> · due {when}"
+            f"• {lead.company} · {lead.phone or 'no phone'}\n"
+            f"  DOT {lead.usdot} · due {when}"
         )
     await update.effective_message.reply_text(
         "\n".join(lines),
-        parse_mode="HTML",
-        reply_markup=search_keyboard(usdots),
+        reply_markup=search_keyboard(usdots)
     )
 
 
@@ -207,9 +204,9 @@ async def followups(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     s = store(context).stats()
     text = (
-        "📊 <b>Progress</b>\n\n"
-        f"Total leads: <b>{s['total_leads']:,}</b>\n"
-        f"Still new / available: <b>{s['new_remaining']:,}</b>\n"
+        "📊 Progress\n\n"
+        f"Total leads: {s['total_leads']:,}\n"
+        f"Still new / available: {s['new_remaining']:,}\n"
         f"Viewed: {s['viewed']}\n"
         f"Contacted: {s['contacted']}\n"
         f"Interested: {s['interested']}\n"
@@ -218,16 +215,15 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Phone→Telegram links: {s.get('telegram_links', 0)}\n"
         f"Touched overall: {s['touched']}"
     )
-    await update.effective_message.reply_text(text, parse_mode="HTML")
+    await update.effective_message.reply_text(text)
 
 
 @allowed_only
 async def linkphone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.effective_message.reply_text(
         "Tap the button below to share your phone number.\n"
-        "I’ll save <b>phone → your Telegram id</b> (and unlock matching leads if the number is in the CSV).",
-        parse_mode="HTML",
-        reply_markup=share_contact_keyboard(),
+        "I’ll save phone → your Telegram id (and unlock matching leads if the number is in the CSV).",
+        reply_markup=share_contact_keyboard()
     )
 
 
@@ -241,7 +237,7 @@ async def on_contact(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if contact.user_id and contact.user_id != user.id:
         await update.effective_message.reply_text(
             "Please share your own contact (not someone else’s).",
-            reply_markup=remove_keyboard(),
+            reply_markup=remove_keyboard()
         )
         return
     phone = contact.phone_number or ""
@@ -253,7 +249,7 @@ async def on_contact(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             phone,
             telegram_user_id=tg_id,
             telegram_username=username,
-            source="contact_share",
+            source="contact_share"
         )
     except ValueError as exc:
         await update.effective_message.reply_text(str(exc), reply_markup=remove_keyboard())
@@ -265,11 +261,10 @@ async def on_contact(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         names = ", ".join(f"{m.company} (DOT {m.usdot})" for m in matches[:5])
         extra = f"\nMatched lead(s): {names}"
     await update.effective_message.reply_text(
-        f"✅ Linked phone <code>{phone_norm}</code> → Telegram id <code>{tg_id}</code>"
+        f"✅ Linked phone {phone_norm} → Telegram id {tg_id}"
         + (f" (@{username})" if username else "")
         + extra,
-        parse_mode="HTML",
-        reply_markup=remove_keyboard(),
+        reply_markup=remove_keyboard()
     )
 
 
@@ -293,12 +288,12 @@ async def settg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if len(args) < 2:
         await update.effective_message.reply_text(
             "Usage:\n"
-            "/settg &lt;phone|USDOT&gt; &lt;@username|telegram_id&gt;\n\n"
+            "/settg <phone|USDOT> <@username|telegram_id>\n\n"
             "Examples:\n"
             "/settg 6023978970 @fleetowner\n"
             "/settg 1301572 123456789\n"
             "/settg +1-602-397-8970 123456789",
-            parse_mode="HTML",
+            
         )
         return
 
@@ -325,8 +320,8 @@ async def settg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     if not normalize_phone(phone):
         await update.effective_message.reply_text(
-            f"Lead DOT {usdot} has no phone on file. Provide a phone: /settg &lt;phone&gt; &lt;@user|id&gt;",
-            parse_mode="HTML",
+            f"Lead DOT {usdot} has no phone on file. Provide a phone: /settg <phone> <@user|id>",
+            
         )
         return
 
@@ -336,7 +331,7 @@ async def settg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             telegram_user_id=tg_id,
             telegram_username=tg_user,
             usdot=usdot,
-            source="manual",
+            source="manual"
         )
     except ValueError as exc:
         await update.effective_message.reply_text(str(exc))
@@ -344,9 +339,9 @@ async def settg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     label = f"@{tg_user}" if tg_user else f"id {tg_id}"
     await update.effective_message.reply_text(
-        f"✅ Saved Telegram {label} for phone <code>{phone_norm}</code>"
-        + (f" · DOT <code>{usdot}</code>" if usdot else ""),
-        parse_mode="HTML",
+        f"✅ Saved Telegram {label} for phone {phone_norm}"
+        + (f" · DOT {usdot}" if usdot else ""),
+        
     )
     if usdot:
         await send_lead(update, context, usdot)
@@ -356,7 +351,7 @@ async def settg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def findtg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     args = context.args or []
     if not args:
-        await update.effective_message.reply_text("Usage: /findtg &lt;phone&gt;", parse_mode="HTML")
+        await update.effective_message.reply_text("Usage: /findtg <phone>")
         return
     phone = " ".join(args)
     lead_store = store(context)
@@ -364,23 +359,23 @@ async def findtg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     matches = lead_store.find_leads_by_phone(phone)
     if not row and not matches:
         await update.effective_message.reply_text(
-            f"No Telegram link and no CSV lead for <code>{normalize_phone(phone) or phone}</code>.\n"
-            "Add one with /settg &lt;phone&gt; &lt;@user|id&gt;",
-            parse_mode="HTML",
+            f"No Telegram link and no CSV lead for {normalize_phone(phone) or phone}.\n"
+            "Add one with /settg <phone> <@user|id>",
+            
         )
         return
-    lines = [f"🔎 Phone <code>{normalize_phone(phone) or phone}</code>"]
+    lines = [f"🔎 Phone {normalize_phone(phone) or phone}"]
     if row:
         uname = f"@{row['telegram_username']}" if row["telegram_username"] else "—"
         lines.append(
-            f"Telegram: {uname} · id <code>{row['telegram_user_id'] or '—'}</code> · "
+            f"Telegram: {uname} · id {row['telegram_user_id'] or '—'} · "
             f"DOT {row['usdot'] or '—'} · source {row['source']}"
         )
     else:
         lines.append("Telegram: not linked yet")
     for lead in matches[:5]:
-        lines.append(f"Lead: <b>{lead.company}</b> · DOT <code>{lead.usdot}</code> · {lead.city}, {lead.state}")
-    await update.effective_message.reply_text("\n".join(lines), parse_mode="HTML")
+        lines.append(f"Lead: {lead.company} · DOT {lead.usdot} · {lead.city}, {lead.state}")
+    await update.effective_message.reply_text("\n".join(lines))
 
 
 @allowed_only
@@ -388,18 +383,18 @@ async def tglist(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     rows = store(context).list_telegram_links(20)
     if not rows:
         await update.effective_message.reply_text(
-            "No phone→Telegram links yet.\nUse /linkphone or /settg &lt;phone&gt; &lt;@user|id&gt;.",
-            parse_mode="HTML",
+            "No phone→Telegram links yet.\nUse /linkphone or /settg <phone> <@user|id>.",
+            
         )
         return
-    lines = ["💬 <b>Recent Telegram links</b>\n"]
+    lines = ["💬 Recent Telegram links\n"]
     for row in rows:
         uname = f"@{row['telegram_username']}" if row["telegram_username"] else "—"
         lines.append(
-            f"• <code>{row['phone_norm']}</code> → {uname} / id <code>{row['telegram_user_id'] or '—'}</code>"
+            f"• {row['phone_norm']} → {uname} / id {row['telegram_user_id'] or '—'}"
             + (f" · DOT {row['usdot']}" if row["usdot"] else "")
         )
-    await update.effective_message.reply_text("\n".join(lines), parse_mode="HTML")
+    await update.effective_message.reply_text("\n".join(lines))
 
 
 @allowed_only
@@ -433,13 +428,13 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
         phone = lead.phone or "No phone on file"
         await query.message.reply_text(
-            f"📞 Call <b>{_html(lead.company)}</b>\n"
-            f"Ask for: <b>{_html(lead.officer or 'owner / safety / compliance')}</b>\n"
-            f"Number: <code>{_html(phone)}</code>",
-            parse_mode="HTML",
+            f"📞 Call {lead.company}\n"
+            f"Ask for: {lead.officer or 'owner / safety / compliance'}\n"
+            f"Number: {phone}",
+            
         )
         # Plain text pitch (no HTML) so & / quotes never break Telegram parsing
-        call_pitch = personalized_pitch(lead).split("✉️")[0].strip()
+        call_pitch = personalized_pitch(lead).split("EMAIL SUBJECT")[0].strip()
         await query.message.reply_text(call_pitch, disable_web_page_preview=True)
         return
 
@@ -451,8 +446,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
         email = lead.email or "No email on file"
         await query.message.reply_text(
-            f"✉️ Email <b>{_html(lead.company)}</b>\nTo: <code>{_html(email)}</code>",
-            parse_mode="HTML",
+            f"✉️ Email {lead.company}\nTo: {email}",
+            
         )
         await query.message.reply_text(personalized_pitch(lead), disable_web_page_preview=True)
         return
@@ -465,12 +460,12 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
         phone = lead.phone or "unknown"
         await query.message.reply_text(
-            f"💬 Link Telegram for <b>{_html(lead.company)}</b>\n"
-            f"Phone on file: <code>{_html(phone)}</code>\n\n"
-            f"Send:\n<code>/settg {_html(phone)} @username</code>\n"
-            f"or\n<code>/settg {_html(usdot)} 123456789</code>\n\n"
+            f"💬 Link Telegram for {lead.company}\n"
+            f"Phone on file: {phone}\n\n"
+            f"Send:\n/settg {phone} @username\n"
+            f"or\n/settg {usdot} 123456789\n\n"
             "Telegram bots cannot look up random numbers automatically.",
-            parse_mode="HTML",
+            
         )
         return
 
@@ -511,7 +506,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     status=state["status"] if state else "new",
                     follow_up_at=state["follow_up_at"] if state else None,
                     telegram_username=tg_user,
-                    telegram_user_id=tg_id,
+                    telegram_user_id=tg_id
                 )
                 pitch = personalized_pitch(lead)
                 await query.message.reply_text(
@@ -519,20 +514,9 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     reply_markup=lead_keyboard(
                         lead.usdot, lead.phone, lead.email, telegram_username=tg_user
                     ),
-                    parse_mode="HTML",
-                    disable_web_page_preview=True,
+                    disable_web_page_preview=True
                 )
                 await query.message.reply_text(pitch, disable_web_page_preview=True)
         return
 
     await query.message.reply_text(f"Unhandled action: {data}")
-
-
-def _html(text: str) -> str:
-    return (
-        (text or "")
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
