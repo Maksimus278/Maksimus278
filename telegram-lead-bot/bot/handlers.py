@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from functools import wraps
 
 from telegram import Update
@@ -24,6 +25,18 @@ def _is_benign_telegram_error(exc: BaseException) -> bool:
         or "query id is invalid" in text
         or "message to edit not found" in text
     )
+
+
+def _is_duplicate_action(context: ContextTypes.DEFAULT_TYPE, key: str, ttl_sec: float = 2.0) -> bool:
+    """True if the same button was tapped again within ttl_sec (Telegram double-fire)."""
+    now = time.monotonic()
+    last = context.user_data.get("_action_ts", {})
+    prev = float(last.get(key, 0))
+    if now - prev < ttl_sec:
+        return True
+    last[key] = now
+    context.user_data["_action_ts"] = last
+    return False
 
 
 def allowed_only(func):
@@ -608,6 +621,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     if data.startswith("copy:"):
         usdot = data.split(":", 1)[1]
+        if _is_duplicate_action(context, f"copy:{usdot}"):
+            return
         lead = lead_store.get_lead(usdot)
         if not lead:
             await query.message.reply_text("Lead not found.")
@@ -616,14 +631,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         text_block = copy_text_version(
             lead, sender_name=sender_name, sender_phone=sender_phone
         )
-        phone = to_e164(lead.phone) or lead.phone or "no phone"
-        await query.message.reply_text(
-            f"SMS ready (name: {sender_name}). Phone: {phone}\n"
-            f"Long-press next message → Copy → paste into SMS\n"
-            f"Change name: /setname Your Name\n\n"
-            f"{text_block}",
-            disable_web_page_preview=True,
-        )
+        # Only the SMS body — nothing before "Hi …"
+        await query.message.reply_text(text_block, disable_web_page_preview=True)
         return
 
     if data.startswith("call:"):
