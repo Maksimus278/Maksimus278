@@ -29,16 +29,33 @@ else:
     # Default: claim the first Telegram user who messages the bot
     AUTO_CLAIM_OWNER = True
 
+_usernames = os.getenv("TELEGRAM_ALLOWED_USERNAMES", "").strip()
+ALLOWED_USERNAMES: set[str] = {
+    x.strip().lstrip("@").lower()
+    for x in _usernames.split(",")
+    if x.strip()
+}
+
 OWNER_FILE = Path(os.getenv("OWNER_FILE", str(ROOT / "data" / "allowed_owner.txt")))
 if not OWNER_FILE.is_absolute():
     OWNER_FILE = ROOT / OWNER_FILE
 
-# Persist claimed owner across restarts
+# Persist claimed owners across restarts
 if OWNER_FILE.exists():
     for line in OWNER_FILE.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if line.isdigit():
             ALLOWED_USER_IDS.add(int(line))
+
+
+def _persist_owner_id(user_id: int) -> None:
+    OWNER_FILE.parent.mkdir(parents=True, exist_ok=True)
+    existing: set[str] = set()
+    if OWNER_FILE.exists():
+        existing = {ln.strip() for ln in OWNER_FILE.read_text(encoding="utf-8").splitlines() if ln.strip()}
+    existing.add(str(user_id))
+    OWNER_FILE.write_text("\n".join(sorted(existing)) + "\n", encoding="utf-8")
+
 
 LEADS_CSV_PATH = Path(os.getenv("LEADS_CSV_PATH", str(ROOT / "data" / "fleetguard-leads.csv")))
 if not LEADS_CSV_PATH.is_absolute():
@@ -59,16 +76,25 @@ def claim_owner(user_id: int) -> bool:
         return True
     if not AUTO_CLAIM_OWNER:
         return False
-    if ALLOWED_USER_IDS:
-        # Already claimed by someone else
+    if ALLOWED_USER_IDS and not ALLOWED_USERNAMES:
+        # Already claimed and no username allowlist escape hatch
+        return False
+    if ALLOWED_USER_IDS and AUTO_CLAIM_OWNER and not ALLOWED_USERNAMES:
+        return False
+    # If allowlist usernames exist, don't auto-claim random users
+    if ALLOWED_USERNAMES:
         return False
     ALLOWED_USER_IDS.add(user_id)
-    OWNER_FILE.parent.mkdir(parents=True, exist_ok=True)
-    OWNER_FILE.write_text(f"{user_id}\n", encoding="utf-8")
+    _persist_owner_id(user_id)
     return True
 
 
-def is_allowed(user_id: int) -> bool:
+def is_allowed(user_id: int, username: str | None = None) -> bool:
     if user_id in ALLOWED_USER_IDS:
+        return True
+    uname = (username or "").lstrip("@").lower()
+    if uname and uname in ALLOWED_USERNAMES:
+        ALLOWED_USER_IDS.add(user_id)
+        _persist_owner_id(user_id)
         return True
     return claim_owner(user_id)
