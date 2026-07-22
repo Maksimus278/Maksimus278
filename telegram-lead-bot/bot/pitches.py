@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+import random
+
 from .leads import Lead
 
 SITE_URL = "https://www.fleetguardlogistics.com"
 TRIAL_URL = "https://www.fleetguardlogistics.com"
+
+
+def _first_name(lead: Lead) -> str:
+    name = lead.officer or "there"
+    if not name or name.lower() == "there":
+        return "there"
+    return name.split()[0].title()
 
 
 def sms_text(
@@ -11,19 +20,34 @@ def sms_text(
     *,
     sender_name: str = "Your Name",
 ) -> str:
-    """Single SMS body ready to long-press and copy."""
-    name = lead.officer or "there"
-    first = name.split()[0].title() if name and name.lower() != "there" else "there"
+    """Confident SMS body ready to long-press and copy."""
+    first = _first_name(lead)
     company = lead.company or lead.legal_name or "your fleet"
     trucks = lead.power_units or "a few"
     dot = lead.usdot or "your DOT number"
     me = (sender_name or "Your Name").strip() or "Your Name"
-    return (
-        f"Hi {first}, {me} at FleetGuardAI. "
-        f"For {company} (~{trucks} trucks): keep driver files and expirations in one place. "
-        f"14-day trial: {SITE_URL} -> Start Trial -> add DOT {dot}. "
-        f"Cancel before day 14 if it is not useful."
-    )
+
+    options = [
+        (
+            f"Hi {first}, {me} with FleetGuardAI. "
+            f"{company} (~{trucks} trucks) should not be chasing CDLs, med cards, and expirations by hand. "
+            f"We put driver files + due dates in one dashboard and flag what is missing before it stops a truck. "
+            f"Start the 14-day trial now: {SITE_URL} → Start Trial → add DOT {dot}."
+        ),
+        (
+            f"{first}, {me} at FleetGuardAI. "
+            f"Fleets your size (~{trucks} trucks) lose time and risk when paperwork is scattered. "
+            f"FleetGuardAI keeps compliance docs current and shows what expires next — for {company}, DOT {dot}. "
+            f"Open {SITE_URL}, hit Start Trial, add your DOT. 14 days. Card required. Cancel anytime before day 14."
+        ),
+        (
+            f"Hi {first} — {me}, FleetGuardAI. "
+            f"I looked at {company} (~{trucks} units). You need one system for driver files, insurance, permits, and expirations — not folders and reminders. "
+            f"Trial is live: {SITE_URL} → Start 14-Day Trial → DOT {dot}. "
+            f"Get the dashboard up today; cancel before day 14 if you do not keep it."
+        ),
+    ]
+    return random.choice(options)
 
 
 def personalized_pitch(
@@ -33,59 +57,54 @@ def personalized_pitch(
     sender_phone: str = "Your Number",
 ) -> str:
     """Plain-text call / SMS / email scripts with your name filled in."""
-    name = lead.officer or "there"
-    first = name.split()[0].title() if name and name.lower() != "there" else "there"
+    first = _first_name(lead)
     company = lead.company or lead.legal_name or "your fleet"
     trucks = lead.power_units or "a few"
     city_state = ", ".join(p for p in [lead.city, lead.state] if p) or "your area"
     plan = lead.suggested_plan or "a FleetGuard plan"
     dot = lead.usdot or "your DOT number"
     add_on = (lead.add_on or "").strip()
-    add_on_line = f" {add_on}." if add_on else ""
+    add_on_line = f" Add-on that fits you: {add_on}." if add_on else ""
     me = (sender_name or "Your Name").strip() or "Your Name"
     my_phone = (sender_phone or "Your Number").strip() or "Your Number"
 
     call = (
         f"Hi {first}, this is {me} with FleetGuardAI. "
-        f"We help trucking fleets keep CDLs, medical cards, insurance, and permits "
-        f"in one place so missing paperwork does not stop the day. "
-        f"I was looking at {company} out of {city_state}, about {trucks} trucks, DOT {dot}. "
-        f"With a fleet that size, expirations and driver files add up fast. "
-        f"Easy next step: go to {SITE_URL}, click Start 14-Day Trial, add DOT {dot}, "
-        f"upload a few documents, and the dashboard shows what is missing or coming due. "
-        f"Card is required for the trial. Cancel before day 14 if it is not a fit. "
-        f"I can text you the link right now. For your size I would start on {plan}.{add_on_line}"
+        f"I am calling because fleets like {company} in {city_state} — about {trucks} trucks, DOT {dot} — "
+        f"cannot afford missing CDLs, medical cards, insurance, or permits when a truck is ready to roll. "
+        f"We put that paperwork in one place, remind you before dates expire, and show what is incomplete on a live dashboard. "
+        f"Best next step: go to {SITE_URL}, start the 14-day trial, add DOT {dot}, upload a few files, and you will see gaps immediately. "
+        f"For your size I put you on {plan}.{add_on_line} "
+        f"Card is required for the trial. Cancel before day 14 if you decide not to continue. "
+        f"I can text the link right now."
     )
 
     voicemail = (
         f"Hi {first}, {me} with FleetGuardAI. "
-        f"We organize fleet paperwork and expiration reminders for carriers like {company}. "
-        f"Start a 14-day trial at {SITE_URL}. Add your DOT number, upload files, "
-        f"see what needs attention. Happy to walk you through it. {my_phone}."
+        f"Calling about {company} — we run DOT compliance docs and expiration tracking for fleets your size. "
+        f"Start the 14-day trial at {SITE_URL}, add DOT {dot}, and see what is due before it bites you. "
+        f"Call me back at {my_phone}."
     )
 
-    # Reuse sms_text inside personalized_pitch to keep one source of truth
     sms = sms_text(lead, sender_name=me)
 
-    email_subject = f"{company}: see what is due before it expires (14-day trial)"
+    email_subject = f"{company}: get expirations under control in 14 days"
     email_body = (
         f"Hi {first},\n\n"
-        f"Quick note for {company} (~{trucks} trucks, DOT {dot}) in {city_state}.\n\n"
-        f"FleetGuardAI keeps CDLs, medical cards, insurance, permits, and inspection files "
-        f"in one place, sends reminders before dates expire, and lets you check your public "
-        f"DOT/FMCSA record without hunting around.\n\n"
-        f"Start here:\n"
+        f"I am reaching out about {company} (~{trucks} trucks, DOT {dot}) in {city_state}.\n\n"
+        f"FleetGuardAI is built for fleets that need CDLs, medical cards, insurance, permits, and inspections "
+        f"in one system — with reminders before dates expire and a clear view of what is missing.\n\n"
+        f"Do this today:\n"
         f"1) Open {TRIAL_URL}\n"
         f"2) Click Start 14-Day Trial\n"
         f"3) Add DOT {dot}\n"
         f"4) Upload a few driver/fleet files\n"
-        f"5) Open the dashboard to see what is missing or coming due\n\n"
-        f"Suggested plan for your size: {plan}.{add_on_line}\n"
+        f"5) Open the dashboard — you will see what needs attention\n\n"
+        f"Recommended for your size: {plan}.{add_on_line}\n"
         f"Trial requires a card. Cancel before day 14 to avoid a charge.\n\n"
-        f"Website: {SITE_URL}\n"
+        f"Site: {SITE_URL}\n"
         f"FMCSA snapshot: {lead.safer_url or 'n/a'}\n\n"
-        f"If easier, reply and I can do a 10-minute screen share while you set it up.\n\n"
-        f"Thanks,\n"
+        f"Reply if you want a 10-minute walkthrough while you set it up.\n\n"
         f"{me}\n"
         f"FleetGuardAI\n"
         f"{SITE_URL}\n"
