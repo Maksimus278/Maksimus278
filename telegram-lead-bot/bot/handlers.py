@@ -68,20 +68,19 @@ async def send_lead(update: Update, context: ContextTypes.DEFAULT_TYPE, usdot: s
         telegram_user_id=tg_id,
     )
     pitch = personalized_pitch(lead)
-    text = f"{card}\n\n{pitch}"
-    # Telegram message limit ~4096
-    if len(text) > 4000:
-        text = text[:3990] + "…"
-
     keyboard = lead_keyboard(lead.usdot, lead.phone, lead.email, telegram_username=tg_user)
+
+    # Card uses HTML; pitch is plain text (avoids Telegram HTML parse failures on & / quotes)
     if update.callback_query:
         await update.callback_query.edit_message_text(
-            text, reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True
+            card, reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True
         )
+        await update.callback_query.message.reply_text(pitch, disable_web_page_preview=True)
     elif update.effective_message:
         await update.effective_message.reply_text(
-            text, reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True
+            card, reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True
         )
+        await update.effective_message.reply_text(pitch, disable_web_page_preview=True)
 
 
 def _truck_kwargs() -> dict:
@@ -434,12 +433,14 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
         phone = lead.phone or "No phone on file"
         await query.message.reply_text(
-            f"📞 Call <b>{lead.company}</b>\n"
-            f"Ask for: <b>{lead.officer or 'owner / safety / compliance'}</b>\n"
-            f"Number: <code>{phone}</code>\n\n"
-            f"{personalized_pitch(lead).split('✉️')[0].strip()}",
+            f"📞 Call <b>{_html(lead.company)}</b>\n"
+            f"Ask for: <b>{_html(lead.officer or 'owner / safety / compliance')}</b>\n"
+            f"Number: <code>{_html(phone)}</code>",
             parse_mode="HTML",
         )
+        # Plain text pitch (no HTML) so & / quotes never break Telegram parsing
+        call_pitch = personalized_pitch(lead).split("✉️")[0].strip()
+        await query.message.reply_text(call_pitch, disable_web_page_preview=True)
         return
 
     if data.startswith("email:"):
@@ -449,11 +450,11 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await query.message.reply_text("Lead not found.")
             return
         email = lead.email or "No email on file"
-        pitch = personalized_pitch(lead)
         await query.message.reply_text(
-            f"✉️ Email <b>{lead.company}</b>\nTo: <code>{email}</code>\n\n{pitch}",
+            f"✉️ Email <b>{_html(lead.company)}</b>\nTo: <code>{_html(email)}</code>",
             parse_mode="HTML",
         )
+        await query.message.reply_text(personalized_pitch(lead), disable_web_page_preview=True)
         return
 
     if data.startswith("addtg:"):
@@ -464,10 +465,10 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
         phone = lead.phone or "unknown"
         await query.message.reply_text(
-            f"💬 Link Telegram for <b>{lead.company}</b>\n"
-            f"Phone on file: <code>{phone}</code>\n\n"
-            f"Send:\n<code>/settg {phone} @username</code>\n"
-            f"or\n<code>/settg {usdot} 123456789</code>\n\n"
+            f"💬 Link Telegram for <b>{_html(lead.company)}</b>\n"
+            f"Phone on file: <code>{_html(phone)}</code>\n\n"
+            f"Send:\n<code>/settg {_html(phone)} @username</code>\n"
+            f"or\n<code>/settg {_html(usdot)} 123456789</code>\n\n"
             "Telegram bots cannot look up random numbers automatically.",
             parse_mode="HTML",
         )
@@ -500,6 +501,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             nxt = lead_store.next_best(1, **_truck_kwargs())
             if nxt:
                 await query.message.reply_text("Next best ~300-truck lead:")
+                # Reuse the safe two-message sender via a synthetic path
                 lead = nxt[0]
                 lead_store.mark_viewed(lead.usdot)
                 state = lead_store.get_status(lead.usdot)
@@ -511,17 +513,26 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     telegram_username=tg_user,
                     telegram_user_id=tg_id,
                 )
-                text = f"{card}\n\n{personalized_pitch(lead)}"
-                if len(text) > 4000:
-                    text = text[:3990] + "…"
+                pitch = personalized_pitch(lead)
                 await query.message.reply_text(
-                    text,
+                    card,
                     reply_markup=lead_keyboard(
                         lead.usdot, lead.phone, lead.email, telegram_username=tg_user
                     ),
                     parse_mode="HTML",
                     disable_web_page_preview=True,
                 )
+                await query.message.reply_text(pitch, disable_web_page_preview=True)
         return
 
     await query.message.reply_text(f"Unhandled action: {data}")
+
+
+def _html(text: str) -> str:
+    return (
+        (text or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
