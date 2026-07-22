@@ -22,8 +22,33 @@ def build_app() -> Application:
     store = LeadStore(config.LEADS_CSV_PATH, config.LEADS_DB_PATH)
     log.info("Loaded %s leads from %s", f"{len(store.leads):,}", config.LEADS_CSV_PATH)
 
-    app = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
+    app = (
+        Application.builder()
+        .token(config.TELEGRAM_BOT_TOKEN)
+        .connect_timeout(30)
+        .read_timeout(30)
+        .write_timeout(30)
+        .pool_timeout(30)
+        .build()
+    )
     app.bot_data["store"] = store
+
+    async def on_error(update: object, context) -> None:
+        err = context.error
+        log.exception("Unhandled bot error: %s", err)
+        from telegram.error import RetryAfter
+        from telegram import Update as TgUpdate
+
+        if isinstance(err, RetryAfter) and isinstance(update, TgUpdate) and update.effective_message:
+            wait = int(getattr(err, "retry_after", 30)) + 1
+            try:
+                await update.effective_message.reply_text(
+                    f"Telegram rate limit. Wait about {wait} seconds, then try again."
+                )
+            except Exception:
+                pass
+
+    app.add_error_handler(on_error)
 
     app.add_handler(CommandHandler("start", handlers.start))
     app.add_handler(CommandHandler("help", handlers.start))
@@ -47,7 +72,7 @@ def build_app() -> Application:
 def main() -> None:
     app = build_app()
     log.info("Starting FleetGuard lead bot (allowed users: %s)", sorted(config.ALLOWED_USER_IDS))
-    app.run_polling(allowed_updates=["message", "callback_query"])
+    app.run_polling(allowed_updates=["message", "callback_query"], drop_pending_updates=True)
 
 
 if __name__ == "__main__":
