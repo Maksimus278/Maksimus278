@@ -4,7 +4,7 @@ import logging
 from functools import wraps
 
 from telegram import Update
-from telegram.error import RetryAfter, TelegramError
+from telegram.error import BadRequest, RetryAfter, TelegramError
 from telegram.ext import ContextTypes
 
 from . import config
@@ -14,6 +14,16 @@ from .phones import contact_name_parts, normalize_phone, to_e164
 from .pitches import copy_text_version, format_lead_card, personalized_pitch
 
 log = logging.getLogger(__name__)
+
+
+def _is_benign_telegram_error(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return (
+        "message is not modified" in text
+        or "query is too old" in text
+        or "query id is invalid" in text
+        or "message to edit not found" in text
+    )
 
 
 def allowed_only(func):
@@ -28,7 +38,10 @@ def allowed_only(func):
                     "(e.g. @mixerius)."
                 )
             elif update.callback_query:
-                await update.callback_query.answer("Unauthorized", show_alert=True)
+                try:
+                    await update.callback_query.answer("Unauthorized", show_alert=True)
+                except TelegramError:
+                    pass
             return
         try:
             return await func(update, context, *args, **kwargs)
@@ -37,19 +50,40 @@ def allowed_only(func):
             msg = f"Telegram rate limit. Wait {wait} seconds, then try again."
             log.warning("RetryAfter: wait %ss", wait)
             if update.callback_query:
-                await update.callback_query.answer(msg, show_alert=True)
+                try:
+                    await update.callback_query.answer(msg, show_alert=True)
+                except TelegramError:
+                    pass
                 try:
                     await update.callback_query.message.reply_text(msg)
                 except TelegramError:
                     pass
             elif update.effective_message:
-                await update.effective_message.reply_text(msg)
+                try:
+                    await update.effective_message.reply_text(msg)
+                except TelegramError:
+                    pass
+        except BadRequest as exc:
+            if _is_benign_telegram_error(exc):
+                log.info("Ignoring benign Telegram error: %s", exc)
+                return
+            log.exception("Telegram BadRequest in handler")
+            if update.effective_message:
+                try:
+                    await update.effective_message.reply_text(
+                        "Could not update that message. Send /next again."
+                    )
+                except TelegramError:
+                    pass
         except TelegramError as exc:
+            if _is_benign_telegram_error(exc):
+                log.info("Ignoring benign Telegram error: %s", exc)
+                return
             log.exception("Telegram error in handler")
             if update.effective_message:
                 try:
                     await update.effective_message.reply_text(
-                        f"Telegram error: {exc}. Try again in a moment."
+                        "Telegram glitch. Send /next again."
                     )
                 except TelegramError:
                     pass
@@ -96,6 +130,11 @@ async def send_lead_contact(message, lead) -> bool:
             f"Phone to dial/message manually:\n{phone}"
         )
         return False
+    except BadRequest as exc:
+        await message.reply_text(
+            f"Could not send contact card ({exc}).\nPhone:\n{phone}"
+        )
+        return False
     return True
 
 
@@ -132,17 +171,14 @@ async def send_lead(update: Update, context: ContextTypes.DEFAULT_TYPE, usdot: s
         f"Tap Copy SMS for the text to paste"
     )
 
-    # Keep /next light to avoid Telegram flood limits (no auto contact / no long pitch)
-    if update.callback_query:
+    # Always send a NEW message (never edit). Editing causes freezes when content is unchanged.
+    msg = update.effective_message
+    if update.callback_query and update.callback_query.message:
         msg = update.callback_query.message
-        await update.callback_query.edit_message_text(
-            card, reply_markup=keyboard, disable_web_page_preview=True
-        )
-        await msg.reply_text(tip)
-    elif update.effective_message:
-        msg = update.effective_message
-        await msg.reply_text(card, reply_markup=keyboard, disable_web_page_preview=True)
-        await msg.reply_text(tip)
+    if not msg:
+        return
+    await msg.reply_text(card, reply_markup=keyboard, disable_web_page_preview=True)
+    await msg.reply_text(tip)
 
 
 def _truck_kwargs() -> dict:
@@ -505,14 +541,20 @@ async def myname(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 @allowed_only
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except TelegramError as exc:
+        # Stale button presses should not freeze the bot
+        if not _is_benign_telegram_error(exc):
+            log.warning("callback answer failed: %s", exc)
+
     data = query.data or ""
     lead_store = store(context)
 
     if data == "cmd:next":
         leads = lead_store.next_best(1, **_truck_kwargs())
         if not leads:
-            await query.edit_message_text("No new leads left. Try /followups or /stats.")
+            await query.message.reply_text("No new leads left. Try /followups or /stats.")
             return
         await send_lead(update, context, leads[0].usdot)
         return
@@ -642,33 +684,12 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await query.message.reply_text("Unknown status.")
             return
         await query.message.reply_text(msg)
-        # Auto-advance after skip / contacted / follow-up
+        # Auto-advance after skip / contacted / follow-up (always new messages, never edit)
         if status in {"skipped", "contacted", "follow_up"}:
             nxt = lead_store.next_best(1, **_truck_kwargs())
             if nxt:
                 await query.message.reply_text("Next best ~300-truck lead:")
-                # Reuse the safe two-message sender via a synthetic path
-                lead = nxt[0]
-                lead_store.mark_viewed(lead.usdot)
-                state = lead_store.get_status(lead.usdot)
-                tg_user, tg_id = _tg_bits(lead_store, lead.usdot)
-                card = format_lead_card(
-                    lead,
-                    status=state["status"] if state else "new",
-                    follow_up_at=state["follow_up_at"] if state else None,
-                    telegram_username=tg_user,
-                    telegram_user_id=tg_id
-                )
-                sn, sp = _sender_bits(update, context)
-                pitch = personalized_pitch(lead, sender_name=sn, sender_phone=sp)
-                await query.message.reply_text(
-                    card,
-                    reply_markup=lead_keyboard(
-                        lead.usdot, lead.phone, lead.email, telegram_username=tg_user
-                    ),
-                    disable_web_page_preview=True
-                )
-                await query.message.reply_text(pitch, disable_web_page_preview=True)
+                await send_lead(update, context, nxt[0].usdot)
         return
 
     await query.message.reply_text(f"Unhandled action: {data}")
