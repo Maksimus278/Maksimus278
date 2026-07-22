@@ -42,12 +42,24 @@ def personalized_pitch(lead: Lead) -> str:
     )
 
 
-def format_lead_card(lead: Lead, status: str = "new", follow_up_at: str | None = None) -> str:
+def format_lead_card(
+    lead: Lead,
+    status: str = "new",
+    follow_up_at: str | None = None,
+    telegram_username: str = "",
+    telegram_user_id: int | None = None,
+) -> str:
     officer = lead.officer or "—"
     phone = lead.phone or "—"
     email = lead.email or "—"
     location = ", ".join(p for p in [lead.city, lead.state, lead.zip] if p) or "—"
     follow = f"\n📅 Follow-up: {follow_up_at}" if follow_up_at else ""
+    if telegram_username:
+        tg_line = f"\n💬 Telegram: @{_esc(telegram_username.lstrip('@'))}"
+    elif telegram_user_id:
+        tg_line = f"\n💬 Telegram id: <code>{telegram_user_id}</code>"
+    else:
+        tg_line = "\n💬 Telegram: not linked — /settg &lt;phone&gt; &lt;@user|id&gt;"
 
     return (
         f"<b>{_esc(lead.company)}</b>\n"
@@ -56,7 +68,8 @@ def format_lead_card(lead: Lead, status: str = "new", follow_up_at: str | None =
         f"📍 {_esc(location)}\n"
         f"🧑 {_esc(officer)}\n"
         f"📞 <code>{_esc(phone)}</code>\n"
-        f"✉️ <code>{_esc(email)}</code>\n"
+        f"✉️ <code>{_esc(email)}</code>"
+        f"{tg_line}\n"
         f"💼 {_esc(lead.suggested_plan)}\n"
         f"🎯 {_esc(lead.outreach_angle)}\n"
         f"🔗 <a href=\"{_esc(lead.safer_url)}\">SAFER profile</a>\n"

@@ -7,6 +7,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
+from .phones import normalize_phone, phone_match_keys, phones_equal
+
 
 STATUSES = (
     "new",
@@ -148,6 +150,25 @@ class LeadStore:
                     detail TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL
                 )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS telegram_by_phone (
+                    phone_norm TEXT PRIMARY KEY,
+                    telegram_user_id INTEGER,
+                    telegram_username TEXT NOT NULL DEFAULT '',
+                    display_phone TEXT NOT NULL DEFAULT '',
+                    usdot TEXT NOT NULL DEFAULT '',
+                    source TEXT NOT NULL DEFAULT 'manual',
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_tg_usdot
+                ON telegram_by_phone(usdot)
                 """
             )
             conn.commit()
@@ -380,7 +401,117 @@ class LeadStore:
             "skipped": by_status.get("skipped", 0),
             "closed_won": by_status.get("closed_won", 0),
             "closed_lost": by_status.get("closed_lost", 0),
+            "telegram_links": self.count_telegram_links(),
         }
+
+    def count_telegram_links(self) -> int:
+        with self._connect() as conn:
+            return conn.execute("SELECT COUNT(*) AS n FROM telegram_by_phone").fetchone()["n"]
+
+    def find_leads_by_phone(self, phone: str, limit: int = 10) -> list[Lead]:
+        keys = phone_match_keys(phone)
+        if not keys:
+            return []
+        hits: list[Lead] = []
+        for lead in self.leads.values():
+            if phone_match_keys(lead.phone) & keys:
+                hits.append(lead)
+                if len(hits) >= limit:
+                    break
+        return hits
+
+    def set_telegram_for_phone(
+        self,
+        phone: str,
+        *,
+        telegram_user_id: int | None = None,
+        telegram_username: str = "",
+        usdot: str = "",
+        source: str = "manual",
+    ) -> str:
+        phone_norm = normalize_phone(phone)
+        if not phone_norm:
+            raise ValueError("Invalid phone number")
+        if telegram_user_id is None and not telegram_username:
+            raise ValueError("Provide a Telegram user id or @username")
+        username = telegram_username.lstrip("@").strip()
+        # Auto-attach first matching lead USDOT if not provided
+        if not usdot:
+            matches = self.find_leads_by_phone(phone_norm, limit=1)
+            if matches:
+                usdot = matches[0].usdot
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO telegram_by_phone
+                    (phone_norm, telegram_user_id, telegram_username, display_phone, usdot, source, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(phone_norm) DO UPDATE SET
+                    telegram_user_id = excluded.telegram_user_id,
+                    telegram_username = excluded.telegram_username,
+                    display_phone = excluded.display_phone,
+                    usdot = CASE
+                        WHEN excluded.usdot != '' THEN excluded.usdot
+                        ELSE telegram_by_phone.usdot
+                    END,
+                    source = excluded.source,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    phone_norm,
+                    telegram_user_id,
+                    username,
+                    phone.strip(),
+                    usdot,
+                    source,
+                    self._now(),
+                ),
+            )
+            self._log(
+                conn,
+                usdot or phone_norm,
+                "telegram_linked",
+                f"phone={phone_norm}; tg_id={telegram_user_id}; @{username}",
+            )
+            conn.commit()
+        return phone_norm
+
+    def get_telegram_by_phone(self, phone: str) -> sqlite3.Row | None:
+        keys = phone_match_keys(phone)
+        if not keys:
+            return None
+        with self._connect() as conn:
+            rows = conn.execute("SELECT * FROM telegram_by_phone").fetchall()
+        for row in rows:
+            if row["phone_norm"] in keys or phones_equal(row["display_phone"], phone):
+                return row
+            # also compare normalized forms
+            if phone_match_keys(row["phone_norm"]) & keys:
+                return row
+        return None
+
+    def get_telegram_for_lead(self, usdot: str) -> sqlite3.Row | None:
+        lead = self.get_lead(usdot)
+        with self._connect() as conn:
+            by_usdot = conn.execute(
+                "SELECT * FROM telegram_by_phone WHERE usdot = ? LIMIT 1", (usdot,)
+            ).fetchone()
+            if by_usdot:
+                return by_usdot
+        if lead and lead.phone:
+            return self.get_telegram_by_phone(lead.phone)
+        return None
+
+    def list_telegram_links(self, limit: int = 20) -> list[sqlite3.Row]:
+        with self._connect() as conn:
+            return conn.execute(
+                """
+                SELECT * FROM telegram_by_phone
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
 
     def iter_all(self) -> Iterable[Lead]:
         return self.leads.values()

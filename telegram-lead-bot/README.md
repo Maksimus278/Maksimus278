@@ -11,8 +11,14 @@ CSV → Telegram → best lead → contact info + personalized pitch → track f
 | `/search trucking company` | Find by company, DOT, city, officer |
 | `/followups` | Who needs follow-up |
 | `/stats` | Progress |
+| `/linkphone` | Share your contact → save phone → Telegram id |
+| `/settg <phone\|DOT> <@user\|id>` | Manually link Telegram to a lead phone |
+| `/findtg <phone>` | Look up a saved Telegram id by phone |
+| `/tglist` | Recent phone → Telegram links |
 
-**Buttons on every lead:** 📞 Call · ✉️ Email · ✅ Contacted · 🔥 Interested · 📅 Follow Up · ❌ Skip · ⏭ Next
+**Buttons on every lead:** 📞 Call · ✉️ Email · 💬 Telegram/Add Telegram · ✅ Contacted · 🔥 Interested · 📅 Follow Up · ❌ Skip · ⏭ Next
+
+> **Telegram limit:** bots cannot look up strangers’ Telegram ids from CSV phone numbers. Use `/settg` when you know `@username` / id, or `/linkphone` when someone shares their own contact.
 
 ## Live bot
 

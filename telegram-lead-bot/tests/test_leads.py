@@ -64,6 +64,22 @@ class LeadBotTests(unittest.TestCase):
         self.assertIn("total_leads", s)
         self.assertGreater(s["total_leads"], 0)
 
+    def test_telegram_by_phone(self):
+        lead = self.store.next_best(1)[0]
+        self.assertTrue(lead.phone)
+        self.store.set_telegram_for_phone(
+            lead.phone,
+            telegram_user_id=999001,
+            telegram_username="fleetowner",
+            usdot=lead.usdot,
+        )
+        row = self.store.get_telegram_by_phone(lead.phone)
+        self.assertIsNotNone(row)
+        self.assertEqual(row["telegram_user_id"], 999001)
+        self.assertEqual(row["telegram_username"], "fleetowner")
+        by_lead = self.store.get_telegram_for_lead(lead.usdot)
+        self.assertEqual(by_lead["telegram_username"], "fleetowner")
+
 
 if __name__ == "__main__":
     unittest.main()

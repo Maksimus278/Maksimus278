@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 from . import config
 from . import handlers
@@ -32,6 +32,11 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("search", handlers.search))
     app.add_handler(CommandHandler("followups", handlers.followups))
     app.add_handler(CommandHandler("stats", handlers.stats))
+    app.add_handler(CommandHandler("linkphone", handlers.linkphone))
+    app.add_handler(CommandHandler("settg", handlers.settg))
+    app.add_handler(CommandHandler("findtg", handlers.findtg))
+    app.add_handler(CommandHandler("tglist", handlers.tglist))
+    app.add_handler(MessageHandler(filters.CONTACT, handlers.on_contact))
     app.add_handler(CallbackQueryHandler(handlers.on_callback))
     return app
 

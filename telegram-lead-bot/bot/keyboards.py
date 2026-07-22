@@ -1,9 +1,14 @@
 from __future__ import annotations
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 
 
-def lead_keyboard(usdot: str, phone: str = "", email: str = "") -> InlineKeyboardMarkup:
+def lead_keyboard(
+    usdot: str,
+    phone: str = "",
+    email: str = "",
+    telegram_username: str = "",
+) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton("📞 Call", callback_data=f"call:{usdot}"),
@@ -22,6 +27,16 @@ def lead_keyboard(usdot: str, phone: str = "", email: str = "") -> InlineKeyboar
             InlineKeyboardButton("📋 Pitch again", callback_data=f"pitch:{usdot}"),
         ],
     ]
+    if telegram_username:
+        rows.insert(
+            1,
+            [InlineKeyboardButton("💬 Telegram", url=f"https://t.me/{telegram_username.lstrip('@')}")],
+        )
+    else:
+        rows.insert(
+            1,
+            [InlineKeyboardButton("💬 Add Telegram", callback_data=f"addtg:{usdot}")],
+        )
     return InlineKeyboardMarkup(rows)
 
 
@@ -31,3 +46,15 @@ def search_keyboard(usdots: list[str]) -> InlineKeyboardMarkup:
         for usdot in usdots[:8]
     ]
     return InlineKeyboardMarkup(buttons)
+
+
+def share_contact_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton("📱 Share my phone (link Telegram id)", request_contact=True)]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+
+def remove_keyboard() -> ReplyKeyboardRemove:
+    return ReplyKeyboardRemove()
