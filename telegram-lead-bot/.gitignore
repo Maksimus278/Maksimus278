@@ -1,0 +1,8 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+data/leads_state.db
+data/*.db-journal
+.DS_Store
+*.log

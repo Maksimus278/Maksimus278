@@ -1,0 +1,58 @@
+# FleetGuardAI Telegram Lead Bot
+
+CSV → Telegram → best lead → contact info + personalized pitch → track follow-up.
+
+## What you get
+
+| Command | Action |
+| --- | --- |
+| `/next` | Next best unworked lead + pitch |
+| `/highscore` | Top potential leads |
+| `/search trucking company` | Find by company, DOT, city, officer |
+| `/followups` | Who needs follow-up |
+| `/stats` | Progress |
+
+**Buttons on every lead:** 📞 Call · ✉️ Email · ✅ Contacted · 🔥 Interested · 📅 Follow Up · ❌ Skip · ⏭ Next
+
+## Setup (5 minutes)
+
+1. Talk to [@BotFather](https://t.me/BotFather) → `/newbot` → copy the token.
+2. Get your user id from [@userinfobot](https://t.me/userinfobot).
+3. In this folder:
+
+```bash
+cd telegram-lead-bot
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+```
+
+4. Edit `.env`:
+
+```env
+TELEGRAM_BOT_TOKEN=123456:ABC...
+TELEGRAM_ALLOWED_USER_IDS=your_numeric_id
+LEADS_CSV_PATH=data/fleetguard-leads.csv
+```
+
+5. Run:
+
+```bash
+python -m bot
+```
+
+6. Open Telegram, find your bot, send `/start`, then `/next`.
+
+## Data
+
+- Default CSV: `data/fleetguard-leads.csv` (same schema as your FleetGuard export).
+- Sample file for quick tests: `data/fleetguard-leads.sample.csv`.
+- Outreach state is stored in `data/leads_state.db` (SQLite).
+
+## Notes
+
+- Only users listed in `TELEGRAM_ALLOWED_USER_IDS` can use the bot.
+- `/next` ranks by fit score + priority + contact completeness, and skips leads you already marked.
+- 📅 Follow Up schedules a reminder date (`FOLLOWUP_DAYS`, default 3). Check with `/followups`.
+- Use for legitimate B2B outreach. Honor opt-outs. Don’t spam SMS without consent.
