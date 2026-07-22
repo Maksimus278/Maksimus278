@@ -48,18 +48,70 @@ class Lead:
 
     @property
     def effective_score(self) -> int:
-        score = self.fit_score
-        if self.priority.lower() == "high":
-            score += 15
+        """Priority score: lowest → highest. Top leads are 300+."""
+        # Base from CSV fit (typically ~0–120) scaled up
+        score = self.fit_score * 2
+
+        # Market priority from CSV
+        pri = self.priority.lower()
+        if pri == "high":
+            score += 50
+        elif pri == "medium":
+            score += 25
+        else:
+            score += 10
+
+        # Contactability
         if self.email:
-            score += 8
+            score += 30
         if self.phone:
+            score += 20
+
+        # Plan / fleet size tier
+        if self.fit_tier == "Fleet":
+            score += 60
+        elif self.fit_tier == "Growth":
+            score += 40
+        elif self.fit_tier == "Starter":
+            score += 20
+
+        # Bigger fleets = more compliance pain / ACV
+        score += min(max(self.power_units, 0), 80)
+        score += min(max(self.drivers, 0) // 2, 40)
+
+        if (self.hazmat or "").lower() == "yes":
+            score += 25
+
+        rating = (self.safety_rating or "").strip().upper()
+        if rating in {"S", "SATISFACTORY"}:
+            score += 15
+        elif rating not in {"", "NONE LISTED", "NONE"}:
             score += 5
-        if self.fit_tier == "Growth":
-            score += 4
-        elif self.fit_tier == "Fleet":
-            score += 6
-        return score
+
+        return int(score)
+
+    @property
+    def priority_band(self) -> str:
+        """Human label for the numeric priority scale (lowest → highest)."""
+        s = self.effective_score
+        if s >= 300:
+            return "Highest (300+)"
+        if s >= 200:
+            return "High (200–299)"
+        if s >= 100:
+            return "Medium (100–199)"
+        return "Low (0–99)"
+
+    @property
+    def priority_emoji(self) -> str:
+        s = self.effective_score
+        if s >= 300:
+            return "🔥"
+        if s >= 200:
+            return "🟠"
+        if s >= 100:
+            return "🟡"
+        return "⚪"
 
 
 def _to_int(value: str | None, default: int = 0) -> int:
@@ -294,7 +346,7 @@ class LeadStore:
         )
         return ranked[:limit]
 
-    def high_score(self, limit: int = 10) -> list[tuple[Lead, str]]:
+    def high_score(self, limit: int = 10, *, min_score: int = 300) -> list[tuple[Lead, str]]:
         with self._connect() as conn:
             statuses = {
                 r["usdot"]: r["status"]
@@ -309,9 +361,14 @@ class LeadStore:
             status = statuses.get(lead.usdot, "new")
             if status == "skipped":
                 continue
+            if lead.effective_score < min_score:
+                continue
             out.append((lead, status))
             if len(out) >= limit:
                 break
+        # If nothing hits 300+, fall back to top overall so the command isn't empty
+        if not out and min_score > 0:
+            return self.high_score(limit, min_score=0)
         return out
 
     def search(self, query: str, limit: int = 8) -> list[Lead]:

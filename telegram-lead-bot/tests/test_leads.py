@@ -80,6 +80,21 @@ class LeadBotTests(unittest.TestCase):
         by_lead = self.store.get_telegram_for_lead(lead.usdot)
         self.assertEqual(by_lead["telegram_username"], "fleetowner")
 
+    def test_priority_scale_300_plus(self):
+        leads = sorted(self.store.leads.values(), key=lambda l: -l.effective_score)
+        self.assertTrue(leads)
+        top = leads[0]
+        self.assertGreaterEqual(top.effective_score, 300)
+        self.assertIn("300+", top.priority_band)
+        # Scale meaning: higher number = higher priority
+        self.assertGreaterEqual(leads[0].effective_score, leads[-1].effective_score)
+
+    def test_highscore_filters_300(self):
+        rows = self.store.high_score(5, min_score=300)
+        self.assertTrue(rows)
+        for lead, _ in rows:
+            self.assertGreaterEqual(lead.effective_score, 300)
+
 
 if __name__ == "__main__":
     unittest.main()

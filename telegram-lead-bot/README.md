@@ -7,7 +7,10 @@ CSV → Telegram → best lead → contact info + personalized pitch → track f
 | Command | Action |
 | --- | --- |
 | `/next` | Next best unworked lead + pitch |
-| `/highscore` | Top potential leads |
+| `/highscore` | Highest priority leads (**300+**) |
+
+Priority scale (lowest → highest): **Low 0–99** · **Medium 100–199** · **High 200–299** · **Highest 300+**
+
 | `/search trucking company` | Find by company, DOT, city, officer |
 | `/followups` | Who needs follow-up |
 | `/stats` | Progress |
@@ -73,6 +76,7 @@ python -m bot
 ## Notes
 
 - Only users listed in `TELEGRAM_ALLOWED_USER_IDS` can use the bot.
-- `/next` ranks by fit score + priority + contact completeness, and skips leads you already marked.
+- `/next` ranks by priority score (lowest → highest scale; best first). Top leads are **300+**.
+- `/highscore` lists **300+** leads first.
 - 📅 Follow Up schedules a reminder date (`FOLLOWUP_DAYS`, default 3). Check with `/followups`.
 - Use for legitimate B2B outreach. Honor opt-outs. Don’t spam SMS without consent.

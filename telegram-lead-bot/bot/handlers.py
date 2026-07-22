@@ -93,7 +93,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Loaded <b>{stats['total_leads']:,}</b> leads from CSV.\n\n"
         "Commands:\n"
         "/next — next best lead + pitch\n"
-        "/highscore — top potential leads\n"
+        "/highscore — highest priority leads (300+)\n"
         "/search &lt;query&gt; — find a company / DOT / city\n"
         "/followups — who needs follow-up\n"
         "/stats — your progress\n"
@@ -119,17 +119,23 @@ async def next_lead(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 @allowed_only
 async def highscore(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    rows = store(context).high_score(config.HIGH_SCORE_LIMIT)
+    rows = store(context).high_score(config.HIGH_SCORE_LIMIT, min_score=300)
     if not rows:
         await update.effective_message.reply_text("No leads loaded.")
         return
-    lines = ["🔥 <b>Highest-potential leads</b>\n"]
+    min_shown = min(lead.effective_score for lead, _ in rows)
+    title = "🔥 <b>Highest-priority leads (300+)</b>\n" if min_shown >= 300 else "🔥 <b>Top leads</b> <i>(none at 300+ yet — showing best available)</i>\n"
+    lines = [
+        title,
+        "<i>Priority scale (lowest → highest): Low 0–99 · Medium 100–199 · High 200–299 · Highest 300+</i>\n",
+    ]
     usdots = []
     for i, (lead, status) in enumerate(rows, 1):
         usdots.append(lead.usdot)
         lines.append(
-            f"{i}. <b>{lead.company}</b> · score {lead.effective_score} · "
-            f"{lead.power_units} trucks · {lead.city}, {lead.state} · {status}\n"
+            f"{i}. {lead.priority_emoji} <b>{lead.company}</b> · "
+            f"<b>{lead.effective_score}</b> · {lead.priority_band}\n"
+            f"   {lead.power_units} trucks · {lead.city}, {lead.state} · {status}\n"
             f"   DOT <code>{lead.usdot}</code> · {lead.suggested_plan}"
         )
     await update.effective_message.reply_text(
@@ -156,7 +162,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         usdots.append(lead.usdot)
         lines.append(
             f"• <b>{lead.company}</b> · {lead.city}, {lead.state} · "
-            f"{lead.power_units} trucks · score {lead.effective_score}\n"
+            f"{lead.power_units} trucks · {lead.priority_emoji} {lead.effective_score}\n"
             f"  DOT <code>{lead.usdot}</code> · {lead.officer or '—'}"
         )
     await update.effective_message.reply_text(

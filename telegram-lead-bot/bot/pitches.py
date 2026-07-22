@@ -63,8 +63,9 @@ def format_lead_card(
 
     return (
         f"<b>{_esc(lead.company)}</b>\n"
-        f"USDOT <code>{_esc(lead.usdot)}</code> · {_esc(lead.fit_tier)} · score <b>{lead.effective_score}</b>\n"
-        f"🚛 {lead.power_units} trucks · 👤 {lead.drivers} drivers · priority {_esc(lead.priority)}\n"
+        f"USDOT <code>{_esc(lead.usdot)}</code> · {_esc(lead.fit_tier)}\n"
+        f"{lead.priority_emoji} Priority <b>{lead.effective_score}</b> · {_esc(lead.priority_band)}\n"
+        f"🚛 {lead.power_units} trucks · 👤 {lead.drivers} drivers · CSV {_esc(lead.priority)}\n"
         f"📍 {_esc(location)}\n"
         f"🧑 {_esc(officer)}\n"
         f"📞 <code>{_esc(phone)}</code>\n"
