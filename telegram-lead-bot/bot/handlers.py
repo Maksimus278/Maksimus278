@@ -18,9 +18,12 @@ def allowed_only(func):
     @wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
         user = update.effective_user
-        if not user or user.id not in config.ALLOWED_USER_IDS:
+        if not user or not config.is_allowed(user.id):
             if update.message:
-                await update.message.reply_text("Unauthorized. Add your Telegram user id to TELEGRAM_ALLOWED_USER_IDS.")
+                await update.message.reply_text(
+                    "Unauthorized. This bot is locked to its owner. "
+                    "Ask the owner to add your Telegram id to TELEGRAM_ALLOWED_USER_IDS."
+                )
             elif update.callback_query:
                 await update.callback_query.answer("Unauthorized", show_alert=True)
             return

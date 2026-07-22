@@ -14,6 +14,20 @@ CSV → Telegram → best lead → contact info + personalized pitch → track f
 
 **Buttons on every lead:** 📞 Call · ✉️ Email · ✅ Contacted · 🔥 Interested · 📅 Follow Up · ❌ Skip · ⏭ Next
 
+## Live bot
+
+Configured for **@Moneymakeybot**. With `TELEGRAM_ALLOWED_USER_IDS` empty, the **first person who sends `/start` becomes the owner**.
+
+```bash
+cd telegram-lead-bot
+cp .env.example .env   # add TELEGRAM_BOT_TOKEN
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python -m bot
+```
+
+Then open Telegram → `@Moneymakeybot` → `/start` → `/next`.
+
 ## Setup (5 minutes)
 
 1. Talk to [@BotFather](https://t.me/BotFather) → `/newbot` → copy the token.
