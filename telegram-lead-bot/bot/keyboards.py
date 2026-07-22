@@ -11,7 +11,7 @@ def lead_keyboard(
 ) -> InlineKeyboardMarkup:
     rows = [
         [
-            InlineKeyboardButton("Copy text", callback_data=f"copy:{usdot}"),
+            InlineKeyboardButton("Copy SMS", callback_data=f"copy:{usdot}"),
             InlineKeyboardButton("Call", callback_data=f"call:{usdot}"),
         ],
         [

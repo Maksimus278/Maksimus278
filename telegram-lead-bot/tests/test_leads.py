@@ -70,6 +70,12 @@ class LeadBotTests(unittest.TestCase):
         self.assertIn("555-0100", text)
         self.assertIn("EMAIL BODY", text)
         self.assertIn("fleetguardlogistics.com", text.lower())
+        from bot.pitches import copy_text_version, sms_text
+        sms = copy_text_version(lead, sender_name="Alex Rivera")
+        self.assertEqual(sms, sms_text(lead, sender_name="Alex Rivera"))
+        self.assertIn("Alex Rivera", sms)
+        self.assertNotIn("EMAIL BODY", sms)
+        self.assertNotIn("CALL\n", sms)
         card = format_lead_card(lead)
         self.assertIn("Trucks:", card)
         self.assertNotIn("<b>", card)

@@ -81,7 +81,7 @@ async def send_lead(update: Update, context: ContextTypes.DEFAULT_TYPE, usdot: s
 
     tip = (
         f"Your name on scripts: {sender_name}\n"
-        f"Tap Copy text for a clean block to long-press and copy.\n"
+        f"Tap Copy SMS for a text ready to paste into Messages.\n"
         f"Change with /setname Your Name"
     )
     if update.callback_query:
@@ -128,7 +128,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/setname Your Name — put your name into copy-text pitches\n"
         "/setmyphone 5551234567 — put your number into voicemail/email\n"
         "/myname — show saved name/number\n\n"
-        "Tap Copy text under each lead for a clean block to long-press and copy.\n"
+        "Tap Copy SMS under each lead for a text ready to paste.\n"
         "Note: Telegram cannot auto-discover strangers’ ids from CSV phones. "
         "Share a contact or set them with /settg.",
     )
@@ -489,8 +489,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             lead, sender_name=sender_name, sender_phone=sender_phone
         )
         await query.message.reply_text(
-            f"COPY TEXT (name: {sender_name})\n"
-            f"Long-press this message -> Copy.\n"
+            f"SMS ready (name: {sender_name}). Long-press next message -> Copy.\n"
             f"Change name: /setname Your Name"
         )
         await query.message.reply_text(text_block, disable_web_page_preview=True)

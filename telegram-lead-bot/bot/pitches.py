@@ -6,6 +6,26 @@ SITE_URL = "https://www.fleetguardlogistics.com"
 TRIAL_URL = "https://www.fleetguardlogistics.com"
 
 
+def sms_text(
+    lead: Lead,
+    *,
+    sender_name: str = "Your Name",
+) -> str:
+    """Single SMS body ready to long-press and copy."""
+    name = lead.officer or "there"
+    first = name.split()[0].title() if name and name.lower() != "there" else "there"
+    company = lead.company or lead.legal_name or "your fleet"
+    trucks = lead.power_units or "a few"
+    dot = lead.usdot or "your DOT number"
+    me = (sender_name or "Your Name").strip() or "Your Name"
+    return (
+        f"Hi {first}, {me} at FleetGuardAI. "
+        f"For {company} (~{trucks} trucks): keep driver files and expirations in one place. "
+        f"14-day trial: {SITE_URL} -> Start Trial -> add DOT {dot}. "
+        f"Cancel before day 14 if it is not useful."
+    )
+
+
 def personalized_pitch(
     lead: Lead,
     *,
@@ -44,12 +64,8 @@ def personalized_pitch(
         f"see what needs attention. Happy to walk you through it. {my_phone}."
     )
 
-    sms = (
-        f"Hi {first}, {me} at FleetGuardAI. "
-        f"For {company} (~{trucks} trucks): keep driver files and expirations in one place. "
-        f"14-day trial: {SITE_URL} -> Start Trial -> add DOT {dot}. "
-        f"Cancel before day 14 if it is not useful."
-    )
+    # Reuse sms_text inside personalized_pitch to keep one source of truth
+    sms = sms_text(lead, sender_name=me)
 
     email_subject = f"{company}: see what is due before it expires (14-day trial)"
     email_body = (
@@ -91,12 +107,8 @@ def copy_text_version(
     sender_name: str = "Your Name",
     sender_phone: str = "Your Number",
 ) -> str:
-    """Single clean plain-text block meant for long-press copy in Telegram."""
-    return personalized_pitch(
-        lead,
-        sender_name=sender_name,
-        sender_phone=sender_phone,
-    )
+    """Copy-text button content: SMS only."""
+    return sms_text(lead, sender_name=sender_name)
 
 
 def format_lead_card(
