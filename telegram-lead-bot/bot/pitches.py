@@ -64,15 +64,15 @@ def format_lead_card(
     return (
         f"<b>{_esc(lead.company)}</b>\n"
         f"USDOT <code>{_esc(lead.usdot)}</code> · {_esc(lead.fit_tier)}\n"
-        f"{lead.priority_emoji} Priority <b>{lead.effective_score}</b> · {_esc(lead.priority_band)}\n"
-        f"🚛 {lead.power_units} trucks · 👤 {lead.drivers} drivers · CSV {_esc(lead.priority)}\n"
+        f"🚛 <b>{lead.power_units} trucks</b> · 👤 {lead.drivers} drivers\n"
+        f"🎯 {_esc(lead.truck_match_label())}\n"
         f"📍 {_esc(location)}\n"
         f"🧑 {_esc(officer)}\n"
         f"📞 <code>{_esc(phone)}</code>\n"
         f"✉️ <code>{_esc(email)}</code>"
         f"{tg_line}\n"
         f"💼 {_esc(lead.suggested_plan)}\n"
-        f"🎯 {_esc(lead.outreach_angle)}\n"
+        f"📝 {_esc(lead.outreach_angle)}\n"
         f"🔗 <a href=\"{_esc(lead.safer_url)}\">SAFER profile</a>\n"
         f"Status: <b>{_esc(status)}</b>{follow}"
     )

@@ -69,6 +69,11 @@ FOLLOWUP_DAYS = int(os.getenv("FOLLOWUP_DAYS", "3"))
 HIGH_SCORE_LIMIT = int(os.getenv("HIGH_SCORE_LIMIT", "10"))
 SEARCH_LIMIT = int(os.getenv("SEARCH_LIMIT", "8"))
 
+# Prefer fleets around this size ("300 trucks or so")
+TARGET_TRUCKS = int(os.getenv("TARGET_TRUCKS", "300"))
+TARGET_TRUCK_MIN = int(os.getenv("TARGET_TRUCK_MIN", "200"))
+TARGET_TRUCK_MAX = int(os.getenv("TARGET_TRUCK_MAX", "450"))
+
 
 def claim_owner(user_id: int) -> bool:
     """Claim bot ownership for the first user when auto-claim is enabled."""

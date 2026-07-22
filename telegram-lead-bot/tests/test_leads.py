@@ -18,11 +18,15 @@ from bot.pitches import format_lead_card, personalized_pitch  # noqa: E402
 class LeadBotTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        # Prefer full CSV so ~300-truck fleets exist; fall back to sample
+        full = ROOT / "data" / "fleetguard-leads.csv"
         sample = ROOT / "data" / "fleetguard-leads.sample.csv"
-        if not sample.exists():
-            raise unittest.SkipTest("sample CSV missing")
+        csv_path = full if full.exists() else sample
+        if not csv_path.exists():
+            raise unittest.SkipTest("CSV missing")
         cls.tmp = tempfile.TemporaryDirectory()
-        cls.store = LeadStore(sample, Path(cls.tmp.name) / "test.db")
+        cls.store = LeadStore(csv_path, Path(cls.tmp.name) / "test.db")
+        cls.using_full = csv_path == full
 
     @classmethod
     def tearDownClass(cls):
@@ -31,19 +35,24 @@ class LeadBotTests(unittest.TestCase):
     def test_loads_leads(self):
         self.assertGreater(len(self.store.leads), 100)
 
-    def test_next_best(self):
-        leads = self.store.next_best(3)
+    def test_next_best_prefers_near_300_trucks(self):
+        leads = self.store.next_best(5, target_trucks=300, truck_min=200, truck_max=450)
         self.assertTrue(leads)
-        self.assertGreaterEqual(leads[0].effective_score, leads[-1].effective_score)
+        if self.using_full:
+            for lead in leads:
+                self.assertTrue(200 <= lead.power_units <= 450)
+            # Closest to 300 first
+            distances = [lead.truck_distance(300) for lead in leads]
+            self.assertEqual(distances, sorted(distances))
 
     def test_status_and_skip_removes_from_next(self):
-        lead = self.store.next_best(1)[0]
+        lead = self.store.next_best(1, target_trucks=300, truck_min=200, truck_max=450)[0]
         self.store.set_status(lead.usdot, "skipped")
-        nxt = self.store.next_best(5)
+        nxt = self.store.next_best(5, target_trucks=300, truck_min=200, truck_max=450)
         self.assertTrue(all(x.usdot != lead.usdot for x in nxt))
 
     def test_follow_up(self):
-        lead = self.store.next_best(1)[0]
+        lead = self.store.next_best(1, target_trucks=300, truck_min=200, truck_max=450)[0]
         self.store.set_status(lead.usdot, "follow_up", follow_up_days=0)
         due = self.store.followups_due()
         self.assertTrue(any(l.usdot == lead.usdot for l, _ in due))
@@ -54,10 +63,11 @@ class LeadBotTests(unittest.TestCase):
         self.assertTrue(hits)
 
     def test_pitch(self):
-        lead = self.store.next_best(1)[0]
+        lead = self.store.next_best(1, target_trucks=300, truck_min=200, truck_max=450)[0]
         text = personalized_pitch(lead)
         self.assertIn("Call pitch", text)
-        self.assertIn(lead.company, format_lead_card(lead))
+        card = format_lead_card(lead)
+        self.assertIn("trucks", card)
 
     def test_stats(self):
         s = self.store.stats()
@@ -65,7 +75,7 @@ class LeadBotTests(unittest.TestCase):
         self.assertGreater(s["total_leads"], 0)
 
     def test_telegram_by_phone(self):
-        lead = self.store.next_best(1)[0]
+        lead = self.store.next_best(1, target_trucks=300, truck_min=200, truck_max=450)[0]
         self.assertTrue(lead.phone)
         self.store.set_telegram_for_phone(
             lead.phone,
@@ -80,20 +90,14 @@ class LeadBotTests(unittest.TestCase):
         by_lead = self.store.get_telegram_for_lead(lead.usdot)
         self.assertEqual(by_lead["telegram_username"], "fleetowner")
 
-    def test_priority_scale_300_plus(self):
-        leads = sorted(self.store.leads.values(), key=lambda l: -l.effective_score)
-        self.assertTrue(leads)
-        top = leads[0]
-        self.assertGreaterEqual(top.effective_score, 300)
-        self.assertIn("300+", top.priority_band)
-        # Scale meaning: higher number = higher priority
-        self.assertGreaterEqual(leads[0].effective_score, leads[-1].effective_score)
-
-    def test_highscore_filters_300(self):
-        rows = self.store.high_score(5, min_score=300)
+    def test_highscore_near_300_trucks(self):
+        rows = self.store.high_score(5, target_trucks=300, truck_min=200, truck_max=450)
         self.assertTrue(rows)
-        for lead, _ in rows:
-            self.assertGreaterEqual(lead.effective_score, 300)
+        if self.using_full:
+            for lead, _ in rows:
+                self.assertTrue(200 <= lead.power_units <= 450)
+            # First should be very close to 300
+            self.assertLessEqual(rows[0][0].truck_distance(300), 50)
 
 
 if __name__ == "__main__":

@@ -48,70 +48,44 @@ class Lead:
 
     @property
     def effective_score(self) -> int:
-        """Priority score: lowest → highest. Top leads are 300+."""
-        # Base from CSV fit (typically ~0–120) scaled up
-        score = self.fit_score * 2
-
-        # Market priority from CSV
-        pri = self.priority.lower()
-        if pri == "high":
-            score += 50
-        elif pri == "medium":
-            score += 25
-        else:
-            score += 10
-
-        # Contactability
-        if self.email:
-            score += 30
-        if self.phone:
-            score += 20
-
-        # Plan / fleet size tier
-        if self.fit_tier == "Fleet":
-            score += 60
-        elif self.fit_tier == "Growth":
-            score += 40
-        elif self.fit_tier == "Starter":
-            score += 20
-
-        # Bigger fleets = more compliance pain / ACV
-        score += min(max(self.power_units, 0), 80)
-        score += min(max(self.drivers, 0) // 2, 40)
-
-        if (self.hazmat or "").lower() == "yes":
-            score += 25
-
-        rating = (self.safety_rating or "").strip().upper()
-        if rating in {"S", "SATISFACTORY"}:
+        """Secondary quality score (contacts + fit). Not truck count."""
+        score = self.fit_score
+        if self.priority.lower() == "high":
             score += 15
-        elif rating not in {"", "NONE LISTED", "NONE"}:
+        elif self.priority.lower() == "medium":
+            score += 8
+        if self.email:
+            score += 10
+        if self.phone:
             score += 5
-
+        if self.fit_tier == "Fleet":
+            score += 12
+        elif self.fit_tier == "Growth":
+            score += 8
+        elif self.fit_tier == "Starter":
+            score += 3
+        if (self.hazmat or "").lower() == "yes":
+            score += 5
         return int(score)
 
-    @property
-    def priority_band(self) -> str:
-        """Human label for the numeric priority scale (lowest → highest)."""
-        s = self.effective_score
-        if s >= 300:
-            return "Highest (300+)"
-        if s >= 200:
-            return "High (200–299)"
-        if s >= 100:
-            return "Medium (100–199)"
-        return "Low (0–99)"
+    def truck_distance(self, target: int = 300) -> int:
+        """How far fleet size is from the target truck count (0 = perfect)."""
+        return abs(self.power_units - target)
 
-    @property
-    def priority_emoji(self) -> str:
-        s = self.effective_score
-        if s >= 300:
-            return "🔥"
-        if s >= 200:
-            return "🟠"
-        if s >= 100:
-            return "🟡"
-        return "⚪"
+    def in_truck_band(self, low: int = 200, high: int = 450) -> bool:
+        return low <= self.power_units <= high
+
+    def truck_match_label(self, target: int = 300) -> str:
+        dist = self.truck_distance(target)
+        if dist == 0:
+            return f"Exact match · {self.power_units} trucks"
+        if dist <= 25:
+            return f"Very close to {target} · {self.power_units} trucks"
+        if dist <= 75:
+            return f"Near {target} · {self.power_units} trucks"
+        if dist <= 150:
+            return f"Around {target} range · {self.power_units} trucks"
+        return f"{self.power_units} trucks (target {target})"
 
 
 def _to_int(value: str | None, default: int = 0) -> int:
@@ -337,38 +311,70 @@ class LeadStore:
         ).fetchall()
         return {r["usdot"] for r in rows}
 
-    def next_best(self, limit: int = 1) -> list[Lead]:
+    def next_best(
+        self,
+        limit: int = 1,
+        *,
+        target_trucks: int = 300,
+        truck_min: int = 200,
+        truck_max: int = 450,
+    ) -> list[Lead]:
         with self._connect() as conn:
             excluded = self._excluded_usdots(conn)
-        ranked = sorted(
-            (lead for lead in self.leads.values() if lead.usdot not in excluded),
-            key=lambda lead: (-lead.effective_score, -lead.power_units, lead.company),
-        )
+        candidates = [lead for lead in self.leads.values() if lead.usdot not in excluded]
+        in_band = [lead for lead in candidates if lead.in_truck_band(truck_min, truck_max)]
+        pool = in_band if in_band else candidates
+
+        def rank_key(lead: Lead):
+            # Closest to ~300 trucks first, then better contact/fit quality
+            return (
+                lead.truck_distance(target_trucks),
+                -lead.effective_score,
+                -lead.power_units,
+                lead.company,
+            )
+
+        ranked = sorted(pool, key=rank_key)
         return ranked[:limit]
 
-    def high_score(self, limit: int = 10, *, min_score: int = 300) -> list[tuple[Lead, str]]:
+    def high_score(
+        self,
+        limit: int = 10,
+        *,
+        target_trucks: int = 300,
+        truck_min: int = 200,
+        truck_max: int = 450,
+    ) -> list[tuple[Lead, str]]:
+        """Leads closest to the target truck count (~300)."""
         with self._connect() as conn:
             statuses = {
                 r["usdot"]: r["status"]
                 for r in conn.execute("SELECT usdot, status FROM lead_state")
             }
-        ranked = sorted(
-            self.leads.values(),
-            key=lambda lead: (-lead.effective_score, -lead.power_units, lead.company),
-        )
+        in_band = [
+            lead
+            for lead in self.leads.values()
+            if lead.in_truck_band(truck_min, truck_max)
+            and statuses.get(lead.usdot, "new") != "skipped"
+        ]
+        pool = in_band or [
+            lead
+            for lead in self.leads.values()
+            if statuses.get(lead.usdot, "new") != "skipped"
+        ]
+
+        def rank_key(lead: Lead):
+            return (
+                lead.truck_distance(target_trucks),
+                -lead.effective_score,
+                -lead.power_units,
+                lead.company,
+            )
+
+        ranked = sorted(pool, key=rank_key)
         out: list[tuple[Lead, str]] = []
-        for lead in ranked:
-            status = statuses.get(lead.usdot, "new")
-            if status == "skipped":
-                continue
-            if lead.effective_score < min_score:
-                continue
-            out.append((lead, status))
-            if len(out) >= limit:
-                break
-        # If nothing hits 300+, fall back to top overall so the command isn't empty
-        if not out and min_score > 0:
-            return self.high_score(limit, min_score=0)
+        for lead in ranked[:limit]:
+            out.append((lead, statuses.get(lead.usdot, "new")))
         return out
 
     def search(self, query: str, limit: int = 8) -> list[Lead]:

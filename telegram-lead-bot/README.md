@@ -76,7 +76,7 @@ python -m bot
 ## Notes
 
 - Only users listed in `TELEGRAM_ALLOWED_USER_IDS` can use the bot.
-- `/next` ranks by priority score (lowest → highest scale; best first). Top leads are **300+**.
-- `/highscore` lists **300+** leads first.
+- `/next` ranks fleets closest to **~300 trucks** (band 200–450), then by contact/fit quality.
+- `/highscore` lists the closest ~300-truck fleets.
 - 📅 Follow Up schedules a reminder date (`FOLLOWUP_DAYS`, default 3). Check with `/followups`.
 - Use for legitimate B2B outreach. Honor opt-outs. Don’t spam SMS without consent.
