@@ -36,6 +36,9 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("settg", handlers.settg))
     app.add_handler(CommandHandler("findtg", handlers.findtg))
     app.add_handler(CommandHandler("tglist", handlers.tglist))
+    app.add_handler(CommandHandler("setname", handlers.setname))
+    app.add_handler(CommandHandler("setmyphone", handlers.setmyphone))
+    app.add_handler(CommandHandler("myname", handlers.myname))
     app.add_handler(MessageHandler(filters.CONTACT, handlers.on_contact))
     app.add_handler(CallbackQueryHandler(handlers.on_callback))
     return app

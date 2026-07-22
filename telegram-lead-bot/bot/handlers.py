@@ -10,7 +10,7 @@ from . import config
 from .keyboards import lead_keyboard, remove_keyboard, search_keyboard, share_contact_keyboard
 from .leads import LeadStore
 from .phones import normalize_phone
-from .pitches import format_lead_card, personalized_pitch
+from .pitches import copy_text_version, format_lead_card, personalized_pitch
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +45,14 @@ def _tg_bits(lead_store: LeadStore, usdot: str) -> tuple[str, int | None]:
     return (row["telegram_username"] or ""), row["telegram_user_id"]
 
 
+def _sender_bits(update: Update, context: ContextTypes.DEFAULT_TYPE) -> tuple[str, str]:
+    user = update.effective_user
+    fallback = ""
+    if user:
+        fallback = " ".join(p for p in [user.first_name, user.last_name] if p).strip()
+    return store(context).resolve_sender(user.id if user else 0, fallback)
+
+
 async def send_lead(update: Update, context: ContextTypes.DEFAULT_TYPE, usdot: str) -> None:
     lead_store = store(context)
     lead = lead_store.get_lead(usdot)
@@ -59,27 +67,34 @@ async def send_lead(update: Update, context: ContextTypes.DEFAULT_TYPE, usdot: s
     follow_up_at = state["follow_up_at"] if state else None
     lead_store.mark_viewed(usdot)
     tg_user, tg_id = _tg_bits(lead_store, usdot)
+    sender_name, sender_phone = _sender_bits(update, context)
 
     card = format_lead_card(
         lead,
         status=status,
         follow_up_at=follow_up_at,
         telegram_username=tg_user,
-        telegram_user_id=tg_id
+        telegram_user_id=tg_id,
     )
-    pitch = personalized_pitch(lead)
+    pitch = personalized_pitch(lead, sender_name=sender_name, sender_phone=sender_phone)
     keyboard = lead_keyboard(lead.usdot, lead.phone, lead.email, telegram_username=tg_user)
 
-    # Plain text only (card + pitch)
+    tip = (
+        f"Your name on scripts: {sender_name}\n"
+        f"Tap Copy text for a clean block to long-press and copy.\n"
+        f"Change with /setname Your Name"
+    )
     if update.callback_query:
         await update.callback_query.edit_message_text(
             card, reply_markup=keyboard, disable_web_page_preview=True
         )
+        await update.callback_query.message.reply_text(tip)
         await update.callback_query.message.reply_text(pitch, disable_web_page_preview=True)
     elif update.effective_message:
         await update.effective_message.reply_text(
             card, reply_markup=keyboard, disable_web_page_preview=True
         )
+        await update.effective_message.reply_text(tip)
         await update.effective_message.reply_text(pitch, disable_web_page_preview=True)
 
 
@@ -109,11 +124,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/linkphone — share contact to save your phone → Telegram id\n"
         "/settg <phone|DOT> <@user|id> — link Telegram to a lead phone\n"
         "/findtg <phone> — look up a saved Telegram id by phone\n"
-        "/tglist — recent phone → Telegram links\n\n"
-        "Use the buttons under each lead to call, email, and track status.\n"
+        "/tglist — recent phone → Telegram links\n"
+        "/setname Your Name — put your name into copy-text pitches\n"
+        "/setmyphone 5551234567 — put your number into voicemail/email\n"
+        "/myname — show saved name/number\n\n"
+        "Tap Copy text under each lead for a clean block to long-press and copy.\n"
         "Note: Telegram cannot auto-discover strangers’ ids from CSV phones. "
         "Share a contact or set them with /settg.",
-        
     )
 
 
@@ -398,6 +415,47 @@ async def tglist(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 @allowed_only
+async def setname(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    args = context.args or []
+    if not args:
+        await update.effective_message.reply_text("Usage: /setname Your Name")
+        return
+    name = " ".join(args).strip()
+    user = update.effective_user
+    try:
+        store(context).set_sender_name(user.id, name)
+    except ValueError as exc:
+        await update.effective_message.reply_text(str(exc))
+        return
+    await update.effective_message.reply_text(
+        f"Saved. Copy-text pitches will use: {name}"
+    )
+
+
+@allowed_only
+async def setmyphone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    args = context.args or []
+    if not args:
+        await update.effective_message.reply_text("Usage: /setmyphone 5551234567")
+        return
+    phone = " ".join(args).strip()
+    user = update.effective_user
+    store(context).set_sender_phone(user.id, phone)
+    await update.effective_message.reply_text(
+        f"Saved. Voicemail/email scripts will use: {phone}"
+    )
+
+
+@allowed_only
+async def myname(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    sender_name, sender_phone = _sender_bits(update, context)
+    await update.effective_message.reply_text(
+        f"Name: {sender_name}\nPhone: {sender_phone}\n\n"
+        f"Change with /setname and /setmyphone"
+    )
+
+
+@allowed_only
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -420,6 +478,24 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await send_lead(update, context, data.split(":", 1)[1])
         return
 
+    if data.startswith("copy:"):
+        usdot = data.split(":", 1)[1]
+        lead = lead_store.get_lead(usdot)
+        if not lead:
+            await query.message.reply_text("Lead not found.")
+            return
+        sender_name, sender_phone = _sender_bits(update, context)
+        text_block = copy_text_version(
+            lead, sender_name=sender_name, sender_phone=sender_phone
+        )
+        await query.message.reply_text(
+            f"COPY TEXT (name: {sender_name})\n"
+            f"Long-press this message -> Copy.\n"
+            f"Change name: /setname Your Name"
+        )
+        await query.message.reply_text(text_block, disable_web_page_preview=True)
+        return
+
     if data.startswith("call:"):
         usdot = data.split(":", 1)[1]
         lead = lead_store.get_lead(usdot)
@@ -434,7 +510,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             
         )
         # Plain text pitch (no HTML) so & / quotes never break Telegram parsing
-        call_pitch = personalized_pitch(lead).split("EMAIL SUBJECT")[0].strip()
+        sn, sp = _sender_bits(update, context)
+        call_pitch = personalized_pitch(lead, sender_name=sn, sender_phone=sp).split("EMAIL SUBJECT")[0].strip()
         await query.message.reply_text(call_pitch, disable_web_page_preview=True)
         return
 
@@ -449,7 +526,11 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             f"✉️ Email {lead.company}\nTo: {email}",
             
         )
-        await query.message.reply_text(personalized_pitch(lead), disable_web_page_preview=True)
+        sn, sp = _sender_bits(update, context)
+        await query.message.reply_text(
+            personalized_pitch(lead, sender_name=sn, sender_phone=sp),
+            disable_web_page_preview=True,
+        )
         return
 
     if data.startswith("addtg:"):
@@ -508,7 +589,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     telegram_username=tg_user,
                     telegram_user_id=tg_id
                 )
-                pitch = personalized_pitch(lead)
+                sn, sp = _sender_bits(update, context)
+                pitch = personalized_pitch(lead, sender_name=sn, sender_phone=sp)
                 await query.message.reply_text(
                     card,
                     reply_markup=lead_keyboard(

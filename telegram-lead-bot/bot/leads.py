@@ -197,6 +197,16 @@ class LeadStore:
                 ON telegram_by_phone(usdot)
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS sender_profile (
+                    telegram_user_id INTEGER PRIMARY KEY,
+                    display_name TEXT NOT NULL DEFAULT '',
+                    phone TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
             conn.commit()
 
     def _now(self) -> str:
@@ -575,6 +585,66 @@ class LeadStore:
                 """,
                 (limit,),
             ).fetchall()
+
+    def get_sender_profile(self, telegram_user_id: int) -> sqlite3.Row | None:
+        with self._connect() as conn:
+            return conn.execute(
+                "SELECT * FROM sender_profile WHERE telegram_user_id = ?",
+                (telegram_user_id,),
+            ).fetchone()
+
+    def set_sender_name(self, telegram_user_id: int, display_name: str) -> None:
+        name = (display_name or "").strip()
+        if not name:
+            raise ValueError("Name cannot be empty")
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT phone FROM sender_profile WHERE telegram_user_id = ?",
+                (telegram_user_id,),
+            ).fetchone()
+            phone = existing["phone"] if existing else ""
+            conn.execute(
+                """
+                INSERT INTO sender_profile (telegram_user_id, display_name, phone, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(telegram_user_id) DO UPDATE SET
+                    display_name = excluded.display_name,
+                    updated_at = excluded.updated_at
+                """,
+                (telegram_user_id, name, phone, self._now()),
+            )
+            conn.commit()
+
+    def set_sender_phone(self, telegram_user_id: int, phone: str) -> None:
+        phone = (phone or "").strip()
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT display_name FROM sender_profile WHERE telegram_user_id = ?",
+                (telegram_user_id,),
+            ).fetchone()
+            name = existing["display_name"] if existing else ""
+            conn.execute(
+                """
+                INSERT INTO sender_profile (telegram_user_id, display_name, phone, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(telegram_user_id) DO UPDATE SET
+                    phone = excluded.phone,
+                    updated_at = excluded.updated_at
+                """,
+                (telegram_user_id, name, phone, self._now()),
+            )
+            conn.commit()
+
+    def resolve_sender(
+        self,
+        telegram_user_id: int,
+        fallback_name: str = "",
+    ) -> tuple[str, str]:
+        """Return (display_name, phone) for pitch personalization."""
+        row = self.get_sender_profile(telegram_user_id)
+        name = (row["display_name"] if row else "") or (fallback_name or "").strip() or "Your Name"
+        phone = (row["phone"] if row else "") or "Your Number"
+        return name, phone
 
     def iter_all(self) -> Iterable[Lead]:
         return self.leads.values()

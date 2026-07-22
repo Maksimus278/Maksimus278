@@ -6,8 +6,13 @@ SITE_URL = "https://www.fleetguardlogistics.com"
 TRIAL_URL = "https://www.fleetguardlogistics.com"
 
 
-def personalized_pitch(lead: Lead) -> str:
-    """Plain-text call / SMS / email scripts that point to the website trial."""
+def personalized_pitch(
+    lead: Lead,
+    *,
+    sender_name: str = "Your Name",
+    sender_phone: str = "Your Number",
+) -> str:
+    """Plain-text call / SMS / email scripts with your name filled in."""
     name = lead.officer or "there"
     first = name.split()[0].title() if name and name.lower() != "there" else "there"
     company = lead.company or lead.legal_name or "your fleet"
@@ -17,9 +22,11 @@ def personalized_pitch(lead: Lead) -> str:
     dot = lead.usdot or "your DOT number"
     add_on = (lead.add_on or "").strip()
     add_on_line = f" {add_on}." if add_on else ""
+    me = (sender_name or "Your Name").strip() or "Your Name"
+    my_phone = (sender_phone or "Your Number").strip() or "Your Number"
 
     call = (
-        f"Hi {first}, this is [Your Name] with FleetGuardAI. "
+        f"Hi {first}, this is {me} with FleetGuardAI. "
         f"We help trucking fleets keep CDLs, medical cards, insurance, and permits "
         f"in one place so missing paperwork does not stop the day. "
         f"I was looking at {company} out of {city_state}, about {trucks} trucks, DOT {dot}. "
@@ -31,14 +38,14 @@ def personalized_pitch(lead: Lead) -> str:
     )
 
     voicemail = (
-        f"Hi {first}, [Your Name] with FleetGuardAI. "
+        f"Hi {first}, {me} with FleetGuardAI. "
         f"We organize fleet paperwork and expiration reminders for carriers like {company}. "
         f"Start a 14-day trial at {SITE_URL}. Add your DOT number, upload files, "
-        f"see what needs attention. Happy to walk you through it. [Your Number]."
+        f"see what needs attention. Happy to walk you through it. {my_phone}."
     )
 
     sms = (
-        f"Hi {first}, [Your Name] at FleetGuardAI. "
+        f"Hi {first}, {me} at FleetGuardAI. "
         f"For {company} (~{trucks} trucks): keep driver files and expirations in one place. "
         f"14-day trial: {SITE_URL} -> Start Trial -> add DOT {dot}. "
         f"Cancel before day 14 if it is not useful."
@@ -63,9 +70,10 @@ def personalized_pitch(lead: Lead) -> str:
         f"FMCSA snapshot: {lead.safer_url or 'n/a'}\n\n"
         f"If easier, reply and I can do a 10-minute screen share while you set it up.\n\n"
         f"Thanks,\n"
-        f"[Your Name]\n"
+        f"{me}\n"
         f"FleetGuardAI\n"
         f"{SITE_URL}\n"
+        f"{my_phone}\n"
     )
 
     return (
@@ -74,6 +82,20 @@ def personalized_pitch(lead: Lead) -> str:
         f"SMS\n{sms}\n\n"
         f"EMAIL SUBJECT\n{email_subject}\n\n"
         f"EMAIL BODY\n{email_body}"
+    )
+
+
+def copy_text_version(
+    lead: Lead,
+    *,
+    sender_name: str = "Your Name",
+    sender_phone: str = "Your Number",
+) -> str:
+    """Single clean plain-text block meant for long-press copy in Telegram."""
+    return personalized_pitch(
+        lead,
+        sender_name=sender_name,
+        sender_phone=sender_phone,
     )
 
 

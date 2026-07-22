@@ -11,32 +11,28 @@ def lead_keyboard(
 ) -> InlineKeyboardMarkup:
     rows = [
         [
-            InlineKeyboardButton("📞 Call", callback_data=f"call:{usdot}"),
-            InlineKeyboardButton("✉️ Email", callback_data=f"email:{usdot}"),
+            InlineKeyboardButton("Copy text", callback_data=f"copy:{usdot}"),
+            InlineKeyboardButton("Call", callback_data=f"call:{usdot}"),
         ],
         [
-            InlineKeyboardButton("✅ Contacted", callback_data=f"status:contacted:{usdot}"),
-            InlineKeyboardButton("🔥 Interested", callback_data=f"status:interested:{usdot}"),
+            InlineKeyboardButton("Email", callback_data=f"email:{usdot}"),
+            InlineKeyboardButton("Add Telegram", callback_data=f"addtg:{usdot}")
+            if not telegram_username
+            else InlineKeyboardButton("Telegram", url=f"https://t.me/{telegram_username.lstrip('@')}"),
         ],
         [
-            InlineKeyboardButton("📅 Follow Up", callback_data=f"status:follow_up:{usdot}"),
-            InlineKeyboardButton("❌ Skip", callback_data=f"status:skipped:{usdot}"),
+            InlineKeyboardButton("Contacted", callback_data=f"status:contacted:{usdot}"),
+            InlineKeyboardButton("Interested", callback_data=f"status:interested:{usdot}"),
         ],
         [
-            InlineKeyboardButton("⏭ Next lead", callback_data="cmd:next"),
-            InlineKeyboardButton("📋 Pitch again", callback_data=f"pitch:{usdot}"),
+            InlineKeyboardButton("Follow Up", callback_data=f"status:follow_up:{usdot}"),
+            InlineKeyboardButton("Skip", callback_data=f"status:skipped:{usdot}"),
+        ],
+        [
+            InlineKeyboardButton("Next lead", callback_data="cmd:next"),
+            InlineKeyboardButton("Pitch again", callback_data=f"pitch:{usdot}"),
         ],
     ]
-    if telegram_username:
-        rows.insert(
-            1,
-            [InlineKeyboardButton("💬 Telegram", url=f"https://t.me/{telegram_username.lstrip('@')}")],
-        )
-    else:
-        rows.insert(
-            1,
-            [InlineKeyboardButton("💬 Add Telegram", callback_data=f"addtg:{usdot}")],
-        )
     return InlineKeyboardMarkup(rows)
 
 
