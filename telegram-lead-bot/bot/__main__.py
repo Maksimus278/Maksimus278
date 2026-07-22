@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
@@ -8,9 +10,17 @@ from . import config
 from . import handlers
 from .leads import LeadStore
 
+LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOG_DIR / "bot.log"
+
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
     level=logging.INFO,
+    handlers=[
+        logging.StreamHandler(),
+        RotatingFileHandler(LOG_FILE, maxBytes=2_000_000, backupCount=3),
+    ],
 )
 # Avoid logging full bot token in request URLs
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -25,10 +35,12 @@ def build_app() -> Application:
     app = (
         Application.builder()
         .token(config.TELEGRAM_BOT_TOKEN)
+        .concurrent_updates(False)  # serialize handlers — prevents duplicate /next races
         .connect_timeout(30)
         .read_timeout(30)
         .write_timeout(30)
         .pool_timeout(30)
+        .get_updates_read_timeout(40)
         .build()
     )
     app.bot_data["store"] = store
@@ -36,22 +48,32 @@ def build_app() -> Application:
     async def on_error(update: object, context) -> None:
         err = context.error
         log.exception("Unhandled bot error: %s", err)
-        from telegram.error import RetryAfter
+        from telegram.error import RetryAfter, TimedOut, NetworkError
         from telegram import Update as TgUpdate
 
-        if isinstance(err, RetryAfter) and isinstance(update, TgUpdate) and update.effective_message:
-            wait = int(getattr(err, "retry_after", 30)) + 1
+        if isinstance(update, TgUpdate) and update.effective_message:
             try:
-                await update.effective_message.reply_text(
-                    f"Telegram rate limit. Wait about {wait} seconds, then try again."
-                )
+                if isinstance(err, RetryAfter):
+                    wait = int(getattr(err, "retry_after", 30)) + 1
+                    await update.effective_message.reply_text(
+                        f"Telegram rate limit. Wait about {wait} seconds, then try /next."
+                    )
+                elif isinstance(err, (TimedOut, NetworkError)):
+                    await update.effective_message.reply_text(
+                        "Network blip. Send /ping then /next."
+                    )
             except Exception:
                 pass
 
+    async def heartbeat(context) -> None:
+        log.info("heartbeat — bot alive, leads=%s", f"{len(store.leads):,}")
+
     app.add_error_handler(on_error)
+    app.job_queue.run_repeating(heartbeat, interval=60, first=15)
 
     app.add_handler(CommandHandler("start", handlers.start))
     app.add_handler(CommandHandler("help", handlers.start))
+    app.add_handler(CommandHandler("ping", handlers.ping))
     app.add_handler(CommandHandler("next", handlers.next_lead))
     app.add_handler(CommandHandler("highscore", handlers.highscore))
     app.add_handler(CommandHandler("search", handlers.search))
@@ -72,7 +94,11 @@ def build_app() -> Application:
 def main() -> None:
     app = build_app()
     log.info("Starting FleetGuard lead bot (allowed users: %s)", sorted(config.ALLOWED_USER_IDS))
-    app.run_polling(allowed_updates=["message", "callback_query"], drop_pending_updates=True)
+    app.run_polling(
+        allowed_updates=["message", "callback_query"],
+        drop_pending_updates=True,
+        close_loop=False,
+    )
 
 
 if __name__ == "__main__":

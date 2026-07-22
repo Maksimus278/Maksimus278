@@ -12,6 +12,19 @@ from .phones import normalize_phone, phone_match_keys, phones_equal
 
 STATUSES = (
     "new",
+    "viewed",
+    "skipped",
+    "contacted",
+    "interested",
+    "follow_up",
+    "closed_won",
+    "closed_lost",
+)
+
+# /next must not resurface these — otherwise the bot loops the same top lead
+# and Telegram flood-control makes it look "frozen".
+_EXCLUDED_FROM_NEXT = (
+    "viewed",
     "skipped",
     "contacted",
     "interested",
@@ -149,8 +162,10 @@ class LeadStore:
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
         return conn
 
     def _init_db(self) -> None:
@@ -205,6 +220,18 @@ class LeadStore:
                     phone TEXT NOT NULL DEFAULT '',
                     updated_at TEXT NOT NULL
                 )
+                """
+            )
+            # Backfill: past "viewed" events must become excluded, otherwise
+            # /next forever returns the same top ~300-truck lead.
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO lead_state
+                    (usdot, status, notes, follow_up_at, last_contacted_at, updated_at)
+                SELECT usdot, 'viewed', '', NULL, NULL, MAX(created_at)
+                FROM events
+                WHERE action = 'viewed'
+                GROUP BY usdot
                 """
             )
             conn.commit()
@@ -308,16 +335,41 @@ class LeadStore:
             conn.commit()
 
     def mark_viewed(self, usdot: str) -> None:
+        """Mark lead shown so /next advances to a different company."""
+        now = self._now()
         with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT status FROM lead_state WHERE usdot = ?", (usdot,)
+            ).fetchone()
+            if not existing:
+                conn.execute(
+                    """
+                    INSERT INTO lead_state
+                        (usdot, status, notes, follow_up_at, last_contacted_at, updated_at)
+                    VALUES (?, 'viewed', '', NULL, NULL, ?)
+                    """,
+                    (usdot, now),
+                )
+            elif existing["status"] in {"new", "viewed"}:
+                conn.execute(
+                    """
+                    UPDATE lead_state
+                    SET status = 'viewed', updated_at = ?
+                    WHERE usdot = ?
+                    """,
+                    (now, usdot),
+                )
             self._log(conn, usdot, "viewed")
             conn.commit()
 
     def _excluded_usdots(self, conn: sqlite3.Connection) -> set[str]:
+        placeholders = ",".join("?" for _ in _EXCLUDED_FROM_NEXT)
         rows = conn.execute(
-            """
+            f"""
             SELECT usdot FROM lead_state
-            WHERE status IN ('skipped','contacted','interested','follow_up','closed_won','closed_lost')
-            """
+            WHERE status IN ({placeholders})
+            """,
+            _EXCLUDED_FROM_NEXT,
         ).fetchall()
         return {r["usdot"] for r in rows}
 

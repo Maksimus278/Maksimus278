@@ -7,3 +7,4 @@ data/*.db-journal
 data/allowed_owner.txt
 .DS_Store
 *.log
+logs/

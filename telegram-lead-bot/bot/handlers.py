@@ -87,6 +87,15 @@ def allowed_only(func):
                     )
                 except TelegramError:
                     pass
+        except Exception:
+            log.exception("Unhandled exception in handler")
+            if update.effective_message:
+                try:
+                    await update.effective_message.reply_text(
+                        "Bot glitch. Send /ping then /next."
+                    )
+                except TelegramError:
+                    pass
 
     return wrapper
 
@@ -147,10 +156,11 @@ async def send_lead(update: Update, context: ContextTypes.DEFAULT_TYPE, usdot: s
             await target.reply_text(f"Lead {usdot} not found.")
         return
 
-    state = lead_store.get_status(usdot)
-    status = state["status"] if state else "new"
-    follow_up_at = state["follow_up_at"] if state else None
+    # Mark BEFORE send so rapid /next taps cannot re-serve the same lead.
     lead_store.mark_viewed(usdot)
+    state = lead_store.get_status(usdot)
+    status = state["status"] if state else "viewed"
+    follow_up_at = state["follow_up_at"] if state else None
     tg_user, tg_id = _tg_bits(lead_store, usdot)
     sender_name, _sender_phone = _sender_bits(update, context)
 
@@ -164,21 +174,20 @@ async def send_lead(update: Update, context: ContextTypes.DEFAULT_TYPE, usdot: s
     keyboard = lead_keyboard(lead.usdot, lead.phone, lead.email, telegram_username=tg_user)
     phone = to_e164(lead.phone) or lead.phone or "no phone"
 
-    tip = (
-        f"Name on SMS: {sender_name} (/setname to change)\n"
+    # One message only — multiple replies trigger Telegram flood lockouts.
+    text = (
+        f"{card}\n\n"
+        f"Name on SMS: {sender_name} (/setname)\n"
         f"Phone: {phone}\n"
-        f"Tap Save / Message to open contact (call/message/save)\n"
-        f"Tap Copy SMS for the text to paste"
+        f"Save / Message = contact card · Copy SMS = paste text"
     )
 
-    # Always send a NEW message (never edit). Editing causes freezes when content is unchanged.
     msg = update.effective_message
     if update.callback_query and update.callback_query.message:
         msg = update.callback_query.message
     if not msg:
         return
-    await msg.reply_text(card, reply_markup=keyboard, disable_web_page_preview=True)
-    await msg.reply_text(tip)
+    await msg.reply_text(text, reply_markup=keyboard, disable_web_page_preview=True)
 
 
 def _truck_kwargs() -> dict:
@@ -187,6 +196,11 @@ def _truck_kwargs() -> dict:
         "truck_min": config.TARGET_TRUCK_MIN,
         "truck_max": config.TARGET_TRUCK_MAX,
     }
+
+
+@allowed_only
+async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.effective_message.reply_text("pong — bot is alive. Try /next")
 
 
 @allowed_only
@@ -199,6 +213,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Priority target: fleets with ~{config.TARGET_TRUCKS} trucks "
         f"({config.TARGET_TRUCK_MIN}–{config.TARGET_TRUCK_MAX}).\n\n"
         "Commands:\n"
+        "/ping — check bot is alive\n"
         "/next — next best ~300-truck lead + pitch\n"
         "/highscore — fleets closest to ~300 trucks\n"
         "/search <query> — find a company / DOT / city\n"
@@ -603,12 +618,12 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
         phone = to_e164(lead.phone) or lead.phone or "no phone"
         await query.message.reply_text(
-            f"SMS ready (name: {sender_name}).\n"
-            f"1) Tap Save / Message (or the contact card) to open/message {phone}\n"
-            f"2) Long-press next message -> Copy -> paste into SMS\n"
-            f"Change name: /setname Your Name"
+            f"SMS ready (name: {sender_name}). Phone: {phone}\n"
+            f"Long-press next message → Copy → paste into SMS\n"
+            f"Change name: /setname Your Name\n\n"
+            f"{text_block}",
+            disable_web_page_preview=True,
         )
-        await query.message.reply_text(text_block, disable_web_page_preview=True)
         return
 
     if data.startswith("call:"):
@@ -622,9 +637,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             f"Call {lead.company}\n"
             f"Ask for: {lead.officer or 'owner / safety / compliance'}\n"
             f"Number:\n{phone}\n\n"
-            f"Tap the contact card to Call or Message."
+            f"Tap Save / Message for a tappable contact card."
         )
-        await send_lead_contact(query.message, lead)
         return
 
     if data.startswith("email:"):
@@ -688,7 +702,6 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if status in {"skipped", "contacted", "follow_up"}:
             nxt = lead_store.next_best(1, **_truck_kwargs())
             if nxt:
-                await query.message.reply_text("Next best ~300-truck lead:")
                 await send_lead(update, context, nxt[0].usdot)
         return
 
