@@ -1,12 +1,57 @@
-- 👋 Hi, I’m @Maksimus278
-- 👀 I’m interested in ...
-- 🌱 I’m currently learning ...
-- 💞️ I’m looking to collaborate on ...
-- 📫 How to reach me ...
-- 😄 Pronouns: ...
-- ⚡ Fun fact: ...
+# 🚛 ProxyBot — грузовой поисковый бот (loads)
 
-<!---
-Maksimus278/Maksimus278 is a ✨ special ✨ repository because its `README.md` (this file) appears on your GitHub profile.
-You can click the Preview link to take a look at your changes.
---->
+Telegram-бот [@Proxy007Bot](https://t.me/Proxy007Bot) для поиска грузов по направлению.
+
+## Возможности
+
+- Поиск loads по маршруту (`Москва - СПб`, `Екб → Новосибирск`)
+- Фильтр по типу кузова (тент, реф, открытая, газель, самосвал)
+- Лента свежих грузов
+- Подписки на направления (`/watch`) — бот запоминает фильтр
+
+## Быстрый старт
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+# Впиши BOT_TOKEN от @BotFather в .env
+python -m bot.main
+```
+
+Открой бота в Telegram и напиши `/start`, затем например:
+
+```text
+Москва - Санкт-Петербург
+```
+
+## Команды
+
+| Команда | Описание |
+|--------|----------|
+| `/start` | Меню |
+| `/search` | Поиск по шагам |
+| `/loads` | Свежие грузы |
+| `/watch Москва - Казань` | Подписка на направление |
+| `/watches` | Список подписок |
+| `/unwatch` | Снять подписки |
+| `/help` | Справка |
+
+## Данные
+
+Грузы лежат в `data/loads.json`. Добавляй новые объекты в том же формате — бот подхватит их при следующем запуске.
+
+Сейчас подключена **демо-база** типовых направлений РФ/СНГ. Дальше можно заменить источник на ATI / биржу / парсер каналов через тот же `LoadRepository`.
+
+## Безопасность
+
+- Токен бота храни только в `.env` (файл в `.gitignore`)
+- Если токен светился в чате — перевыпусти его в @BotFather (`/revoke`)
+- Опционально ограничь доступ через `ALLOWED_USER_IDS`
+
+## Тесты
+
+```bash
+pytest -q
+```
