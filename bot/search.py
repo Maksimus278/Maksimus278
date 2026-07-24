@@ -8,33 +8,41 @@ from typing import Iterable
 from bot.models import Load, SearchQuery, WatchFilter
 
 _CITY_ALIASES: dict[str, set[str]] = {
-    "москва": {"мск", "moscow", "москва"},
-    "санкт-петербург": {"спб", "питер", "петербург", "санкт-петербург", "st petersburg"},
-    "нижний новгород": {"нн", "нижний", "нижний новгород"},
-    "екатеринбург": {"екб", "ебург", "екатеринбург"},
-    "новосибирск": {"нск", "новосиб", "новосибирск"},
-    "казань": {"казань", "kzn"},
-    "краснодар": {"краснодар", "крд"},
-    "ростов-на-дону": {"ростов", "ростов-на-дону", "rnd"},
-    "самара": {"самара", "смр"},
-    "челябинск": {"челябинск", "чел"},
-    "уфа": {"уфа"},
-    "воронеж": {"воронеж"},
-    "пермь": {"пермь"},
-    "волгоград": {"волгоград"},
-    "красноярск": {"красноярск"},
-    "тюмень": {"тюмень"},
-    "иркутск": {"иркутск"},
-    "хабаровск": {"хабаровск"},
-    "владивосток": {"владивосток", "влд"},
-    "сочи": {"сочи"},
-    "тула": {"тула"},
-    "тверь": {"тверь"},
-    "ярославль": {"ярославль"},
-    "рязань": {"рязань"},
-    "калининград": {"калининград"},
-    "минск": {"минск"},
-    "алматы": {"алматы", "алма-ата"},
+    "los angeles, ca": {"la", "los angeles", "los angeles ca", "los angeles, ca", "lax"},
+    "new york, ny": {"nyc", "new york", "new york ny", "new york, ny", "ny"},
+    "chicago, il": {"chi", "chicago", "chicago il", "chicago, il"},
+    "dallas, tx": {"dallas", "dallas tx", "dallas, tx", "dfw"},
+    "houston, tx": {"houston", "houston tx", "houston, tx", "hou"},
+    "atlanta, ga": {"atlanta", "atlanta ga", "atlanta, ga", "atl"},
+    "phoenix, az": {"phoenix", "phoenix az", "phoenix, az", "phx"},
+    "miami, fl": {"miami", "miami fl", "miami, fl", "mia"},
+    "seattle, wa": {"seattle", "seattle wa", "seattle, wa", "sea"},
+    "denver, co": {"denver", "denver co", "denver, co", "den"},
+    "las vegas, nv": {"las vegas", "vegas", "las vegas nv", "las vegas, nv", "las"},
+    "san francisco, ca": {"sf", "san francisco", "san francisco ca", "san francisco, ca"},
+    "san diego, ca": {"san diego", "san diego ca", "san diego, ca", "san"},
+    "portland, or": {"portland", "portland or", "portland, or", "pdx"},
+    "detroit, mi": {"detroit", "detroit mi", "detroit, mi", "dtw"},
+    "columbus, oh": {"columbus", "columbus oh", "columbus, oh"},
+    "indianapolis, in": {"indianapolis", "indy", "indianapolis in", "indianapolis, in"},
+    "charlotte, nc": {"charlotte", "charlotte nc", "charlotte, nc", "clt"},
+    "nashville, tn": {"nashville", "nashville tn", "nashville, tn", "bna"},
+    "memphis, tn": {"memphis", "memphis tn", "memphis, tn", "mem"},
+    "kansas city, mo": {"kansas city", "kc", "kansas city mo", "kansas city, mo"},
+    "st louis, mo": {"st louis", "saint louis", "st louis mo", "st louis, mo", "stl"},
+    "minneapolis, mn": {"minneapolis", "minneapolis mn", "minneapolis, mn", "msp"},
+    "philadelphia, pa": {"philadelphia", "philly", "philadelphia pa", "philadelphia, pa"},
+    "boston, ma": {"boston", "boston ma", "boston, ma", "bos"},
+    "salt lake city, ut": {"salt lake", "salt lake city", "slc", "salt lake city, ut"},
+    "jacksonville, fl": {"jacksonville", "jacksonville fl", "jacksonville, fl", "jax"},
+    "orlando, fl": {"orlando", "orlando fl", "orlando, fl", "mco"},
+    "tampa, fl": {"tampa", "tampa fl", "tampa, fl"},
+    "el paso, tx": {"el paso", "el paso tx", "el paso, tx"},
+    "san antonio, tx": {"san antonio", "san antonio tx", "san antonio, tx", "sat"},
+    "austin, tx": {"austin", "austin tx", "austin, tx", "aus"},
+    "oklahoma city, ok": {"oklahoma city", "okc", "oklahoma city ok", "oklahoma city, ok"},
+    "laredo, tx": {"laredo", "laredo tx", "laredo, tx"},
+    "ontario, ca": {"ontario", "ontario ca", "ontario, ca"},
 }
 
 
@@ -42,7 +50,7 @@ def normalize_city(value: str | None) -> str | None:
     if not value:
         return None
     cleaned = re.sub(r"\s+", " ", value.strip().lower())
-    cleaned = cleaned.replace("ё", "е")
+    cleaned = cleaned.replace(".", "")
     for canonical, aliases in _CITY_ALIASES.items():
         if cleaned in aliases or cleaned == canonical:
             return canonical
@@ -57,11 +65,19 @@ def cities_match(needle: str | None, haystack: Iterable[str]) -> bool:
     normalized_hay = {normalize_city(item) for item in haystack}
     if n in normalized_hay:
         return True
-    return any(n in (h or "") or (h or "") in n for h in normalized_hay if h)
+    # Match city name without state: "chicago" vs "chicago, il"
+    n_city = n.split(",")[0].strip()
+    for h in normalized_hay:
+        if not h:
+            continue
+        h_city = h.split(",")[0].strip()
+        if n_city == h_city or n_city in h or h_city in n:
+            return True
+    return False
 
 
 ROUTE_RE = re.compile(
-    r"^(?P<origin>.+?)\s*(?:->|→|-|—|–)\s*(?P<destination>.+)$",
+    r"^(?P<origin>.+?)\s*(?:->|→|-|—|–|\bto\b)\s*(?P<destination>.+)$",
     re.IGNORECASE,
 )
 
@@ -103,15 +119,15 @@ class LoadRepository:
                 continue
             if query.truck_type and query.truck_type.lower() not in load.truck_type.lower():
                 continue
-            if query.min_weight is not None and load.weight_tons < query.min_weight:
+            if query.min_weight is not None and load.weight_lbs < query.min_weight:
                 continue
-            if query.max_weight is not None and load.weight_tons > query.max_weight:
+            if query.max_weight is not None and load.weight_lbs > query.max_weight:
                 continue
             if query.min_rate is not None and (load.rate or 0) < query.min_rate:
                 continue
             results.append(load)
 
-        results.sort(key=lambda item: (item.rate is None, -(item.rate or 0), item.weight_tons))
+        results.sort(key=lambda item: (item.rate is None, -(item.rate or 0), item.weight_lbs))
         return results[:limit]
 
     def add_watch(self, watch: WatchFilter) -> None:

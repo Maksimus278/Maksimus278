@@ -4,6 +4,7 @@ import sys
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
@@ -12,18 +13,18 @@ from bot.handlers import router
 from bot.middlewares import AccessMiddleware
 from bot.search import LoadRepository
 
+logger = logging.getLogger(__name__)
 
-async def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        stream=sys.stdout,
-    )
+
+async def run_bot() -> None:
     settings = get_settings()
     repo = LoadRepository(settings.loads_path)
 
+    # Explicit timeout so long-polling cannot hang forever on a dead socket.
+    session = AiohttpSession(timeout=60)
     bot = Bot(
         token=settings.bot_token,
+        session=session,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     dp = Dispatcher(storage=MemoryStorage())
@@ -32,9 +33,36 @@ async def main() -> None:
     dp.callback_query.middleware(AccessMiddleware(settings))
     dp.include_router(router)
 
-    logging.info("Loaded %s loads from %s", len(repo.all()), settings.loads_path)
+    logger.info("Loaded %s US loads from %s", len(repo.all()), settings.loads_path)
     await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot, repo=repo)
+    try:
+        await dp.start_polling(
+            bot,
+            repo=repo,
+            allowed_updates=["message", "callback_query"],
+            polling_timeout=25,
+        )
+    finally:
+        await bot.session.close()
+
+
+async def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        stream=sys.stdout,
+    )
+    backoff = 3
+    while True:
+        try:
+            await run_bot()
+            backoff = 3
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Bot polling crashed; restarting in %ss", backoff)
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 60)
 
 
 if __name__ == "__main__":

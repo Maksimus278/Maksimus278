@@ -1,56 +1,56 @@
-# 🚛 ProxyBot — грузовой поисковый бот (loads)
+# 🚛 ProxyBot — US Load Search Bot
 
-Telegram-бот [@Proxy007Bot](https://t.me/Proxy007Bot) для поиска грузов по направлению.
+Telegram bot [@Proxy007Bot](https://t.me/Proxy007Bot) for finding **American freight loads**.
 
-## Возможности
+## Features
 
-- Поиск loads по маршруту (`Москва - СПб`, `Екб → Новосибирск`)
-- Фильтр по типу кузова (тент, реф, открытая, газель, самосвал)
-- Лента свежих грузов
-- Подписки на направления (`/watch`) — бот запоминает фильтр
+- Search US loads by lane (`Chicago - Dallas`, `LA to Phoenix`)
+- Equipment filter (dry van, reefer, flatbed, box truck, hotshot, power only)
+- Latest loads feed
+- Lane watches (`/watch`)
 
-## Быстрый старт
+## Run
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# Впиши BOT_TOKEN от @BotFather в .env
+# put BOT_TOKEN from @BotFather into .env
 python -m bot.main
 ```
 
-Открой бота в Telegram и напиши `/start`, затем например:
+Then open the bot and try:
 
 ```text
-Москва - Санкт-Петербург
+Chicago - Dallas
 ```
 
-## Команды
+## Commands
 
-| Команда | Описание |
-|--------|----------|
-| `/start` | Меню |
-| `/search` | Поиск по шагам |
-| `/loads` | Свежие грузы |
-| `/watch Москва - Казань` | Подписка на направление |
-| `/watches` | Список подписок |
-| `/unwatch` | Снять подписки |
-| `/help` | Справка |
+| Command | Description |
+|--------|-------------|
+| `/start` | Menu |
+| `/search` | Guided search |
+| `/loads` | Latest US loads |
+| `/watch Chicago - Dallas` | Watch a lane |
+| `/watches` | List watches |
+| `/unwatch` | Clear watches |
+| `/help` | Help |
 
-## Данные
+## Data
 
-Грузы лежат в `data/loads.json`. Добавляй новые объекты в том же формате — бот подхватит их при следующем запуске.
+Loads live in `data/loads.json` (USD, miles, lbs). Restart the bot after editing.
 
-Сейчас подключена **демо-база** типовых направлений РФ/СНГ. Дальше можно заменить источник на ATI / биржу / парсер каналов через тот же `LoadRepository`.
+Current board is a **US demo dataset**. Swap in DAT / Truckstop / broker feed later via the same `LoadRepository`.
 
-## Безопасность
+## Security
 
-- Токен бота храни только в `.env` (файл в `.gitignore`)
-- Если токен светился в чате — перевыпусти его в @BotFather (`/revoke`)
-- Опционально ограничь доступ через `ALLOWED_USER_IDS`
+- Keep the token only in `.env` (gitignored)
+- If the token was shared in chat, revoke it in @BotFather
+- Optional allow-list: `ALLOWED_USER_IDS`
 
-## Тесты
+## Tests
 
 ```bash
 pytest -q

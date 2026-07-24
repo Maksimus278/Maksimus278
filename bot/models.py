@@ -17,16 +17,16 @@ class Load(BaseModel):
     origin_aliases: list[str] = Field(default_factory=list)
     destination_aliases: list[str] = Field(default_factory=list)
     cargo: str
-    weight_tons: float
-    volume_m3: Optional[float] = None
-    truck_type: str = "тент"
+    weight_lbs: float
+    truck_type: str = "dry van"
     rate: Optional[int] = None
-    currency: str = "RUB"
-    payment: str = "на карту"
-    distance_km: Optional[int] = None
+    currency: str = "USD"
+    payment: str = "quick pay"
+    distance_miles: Optional[int] = None
+    rate_per_mile: Optional[float] = None
     loading_date: Optional[date] = None
     contact: str = ""
-    source: str = "board"
+    source: str = "us-board"
     notes: str = ""
     created_at: datetime = Field(default_factory=utc_now)
 
@@ -37,30 +37,31 @@ class Load(BaseModel):
         return {self.destination.lower(), *(a.lower() for a in self.destination_aliases)}
 
     def format_card(self) -> str:
-        rate_line = (
-            f"💰 <b>{self.rate:,} {self.currency}</b> · {self.payment}".replace(",", " ")
-            if self.rate
-            else f"💰 ставка договорная · {self.payment}"
-        )
+        if self.rate is not None:
+            rpm = f" (${self.rate_per_mile:.2f}/mi)" if self.rate_per_mile else ""
+            rate_line = f"💰 <b>${self.rate:,}</b>{rpm} · {self.payment}"
+        else:
+            rate_line = f"💰 rate TBD · {self.payment}"
+
         date_line = (
-            f"📅 погрузка: {self.loading_date.isoformat()}"
+            f"📅 pickup: {self.loading_date.isoformat()}"
             if self.loading_date
-            else "📅 погрузка: сегодня / по договорённости"
+            else "📅 pickup: ASAP / flexible"
         )
-        distance = f" · {self.distance_km} км" if self.distance_km else ""
-        volume = f" / {self.volume_m3:g} м³" if self.volume_m3 else ""
+        distance = f" · {self.distance_miles} mi" if self.distance_miles else ""
         notes = f"\n📝 {self.notes}" if self.notes else ""
         contact = f"\n📞 {self.contact}" if self.contact else ""
+        weight = f"{self.weight_lbs:,.0f} lbs".replace(",", " ")
 
         return (
             f"🚚 <b>{self.origin} → {self.destination}</b>{distance}\n"
-            f"📦 {self.cargo} · {self.weight_tons:g} т{volume}\n"
+            f"📦 {self.cargo} · {weight}\n"
             f"🚛 {self.truck_type}\n"
             f"{rate_line}\n"
             f"{date_line}"
             f"{contact}"
             f"{notes}\n"
-            f"<i>источник: {self.source} · #{self.id}</i>"
+            f"<i>source: {self.source} · #{self.id}</i>"
         )
 
 

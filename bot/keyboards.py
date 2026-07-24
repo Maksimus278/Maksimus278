@@ -4,35 +4,28 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardBu
 def main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="🔍 Найти груз"), KeyboardButton(text="👀 Мои подписки")],
-            [KeyboardButton(text="📋 Все грузы"), KeyboardButton(text="ℹ️ Помощь")],
+            [KeyboardButton(text="🔍 Find load"), KeyboardButton(text="👀 My watches")],
+            [KeyboardButton(text="📋 All loads"), KeyboardButton(text="ℹ️ Help")],
         ],
         resize_keyboard=True,
     )
 
 
 def truck_type_keyboard() -> InlineKeyboardMarkup:
-    types = ["тент", "рефрижератор", "открытая", "газель", "самосвал", "любой"]
+    types = [
+        ("Dry Van", "dry van"),
+        ("Reefer", "reefer"),
+        ("Flatbed", "flatbed"),
+        ("Box Truck", "box truck"),
+        ("Hotshot", "hotshot"),
+        ("Power Only", "power only"),
+        ("Any", "any"),
+    ]
     rows = [
-        [InlineKeyboardButton(text=label.capitalize(), callback_data=f"truck:{label}")]
-        for label in types
+        [InlineKeyboardButton(text=label, callback_data=f"truck:{value}")]
+        for label, value in types
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def watch_confirm_keyboard(origin: str, destination: str) -> InlineKeyboardMarkup:
-    o = origin or "*"
-    d = destination or "*"
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="👀 Следить за направлением",
-                    callback_data=f"watch:{o}|{d}",
-                )
-            ]
-        ]
-    )
 
 
 def after_search_keyboard(origin: str | None, destination: str | None) -> InlineKeyboardMarkup:
@@ -42,10 +35,10 @@ def after_search_keyboard(origin: str | None, destination: str | None) -> Inline
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="👀 Подписаться на направление",
+                    text="👀 Watch this lane",
                     callback_data=f"watch:{o}|{d}",
                 )
             ],
-            [InlineKeyboardButton(text="🔁 Новый поиск", callback_data="search:new")],
+            [InlineKeyboardButton(text="🔁 New search", callback_data="search:new")],
         ]
     )
