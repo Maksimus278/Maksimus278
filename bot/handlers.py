@@ -10,30 +10,32 @@ from bot.keyboards import (
     main_menu,
     truck_type_keyboard,
 )
-from bot.models import Load, SearchQuery, WatchFilter
+from bot.leads import Lead
+from bot.models import SearchQuery, WatchFilter
 from bot.search import LoadRepository, normalize_city, parse_route_text
 from bot.service import LoadService
-from bot.states import SearchStates
+from bot.states import LeadStates, SearchStates
 
 router = Router()
 
 HELP_TEXT = (
-    "I find <b>real US freight loads</b> (live from Trulos public board).\n\n"
-    "<b>How to search</b>\n"
-    "• Tap «🔍 Find load»\n"
-    "• Route: <code>Chicago - Dallas</code>\n"
-    "• Or: <code>LA to Phoenix</code>\n"
-    "• City only: <code>Atlanta</code>\n\n"
-    "<b>Commands</b>\n"
-    "/search — guided search\n"
-    "/loads — latest live US loads\n"
+    "I generate <b>real US freight leads</b> from live loads "
+    "(broker company + phone + lane).\n\n"
+    "<b>Leads</b>\n"
+    "• Tap «🔥 Get leads» for fresh broker leads\n"
+    "• Or: <code>/leads Chicago</code>\n"
+    "• Or: <code>/leads Dallas - Atlanta</code>\n\n"
+    "<b>Loads</b>\n"
+    "• <code>Chicago - Dallas</code>\n"
+    "• <code>LA to Phoenix</code>\n"
+    "• /loads — latest live loads\n\n"
+    "<b>Other</b>\n"
     "/watch Chicago - Dallas — watch a lane\n"
-    "/watches — my watches\n"
-    "/unwatch — clear watches\n"
     "/help — help"
 )
 
 MENU_TEXTS = {
+    "🔥 Get leads",
     "🔍 Find load",
     "🔍 Найти груз",
     "👀 My watches",
@@ -55,21 +57,16 @@ def _format_header(total: int, query: SearchQuery, shown: int, source: str) -> s
     )
 
 
-def _chunk_loads(loads: list[Load], header: str, max_len: int = 3500) -> list[str]:
-    if not loads:
-        return [
-            header
-            + "\nNothing found for this filter.\n"
-            "Try another city (Chicago, Dallas, LA, Atlanta…) or /loads"
-        ]
-
+def _chunk_texts(parts: list[str], header: str, max_len: int = 3500) -> list[str]:
+    if not parts:
+        return [header + "\nNothing found."]
     chunks: list[str] = []
     current = header
-    for load in loads:
-        card = "\n\n" + load.format_card()
+    for part in parts:
+        card = "\n\n" + part
         if len(current) + len(card) > max_len and current != header:
             chunks.append(current)
-            current = "<i>…more loads</i>" + card
+            current = "<i>…more</i>" + card
         else:
             current += card
     chunks.append(current)
@@ -80,12 +77,13 @@ async def _send_search_results(
     message: Message,
     service: LoadService,
     query: SearchQuery,
-    limit: int = 15,
+    limit: int = 12,
 ) -> None:
     await message.answer("⏳ Searching live US loads…")
     loads, source = await service.search(query, limit=limit)
     header = _format_header(len(loads), query, len(loads), source)
-    chunks = _chunk_loads(loads, header)
+    cards = [load.format_card() for load in loads]
+    chunks = _chunk_texts(cards, header)
     for i, chunk in enumerate(chunks):
         kwargs = {}
         if i == len(chunks) - 1:
@@ -93,18 +91,45 @@ async def _send_search_results(
         await message.answer(chunk, **kwargs)
 
 
+async def _send_leads(
+    message: Message,
+    service: LoadService,
+    query: SearchQuery | None = None,
+    limit: int = 12,
+) -> None:
+    await message.answer("🔥 Generating real broker leads from live loads…")
+    leads, source = await service.generate_leads(query, limit=limit)
+    scope = "US hubs"
+    if query and (query.origin or query.destination):
+        scope = f"{query.origin or 'any'} → {query.destination or 'any'}"
+    header = (
+        f"🔥 <b>Real leads</b> · {scope}\n"
+        f"Generated <b>{len(leads)}</b> unique broker contacts\n"
+        f"<i>source: {source}</i>\n"
+    )
+    if not leads:
+        await message.answer(
+            header + "\nNo dialable leads right now. Try another city, e.g. <code>/leads Chicago</code>",
+            reply_markup=main_menu(),
+        )
+        return
+    cards = [lead.format_card(i) for i, lead in enumerate(leads, start=1)]
+    chunks = _chunk_texts(cards, header)
+    for chunk in chunks:
+        await message.answer(chunk, reply_markup=main_menu())
+
+
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext, service: LoadService) -> None:
     await state.clear()
-    mode = "LIVE Trulos board" if service.use_live else "local demo"
+    mode = "LIVE Trulos leads" if service.use_live else "local demo"
     await message.answer(
-        "🚛 <b>ProxyBot — US Load Board</b>\n\n"
+        "🚛 <b>ProxyBot — US Leads & Loads</b>\n\n"
         f"Mode: <b>{mode}</b>\n\n"
-        "Search real American freight, for example:\n"
-        "<code>Chicago → Dallas</code>\n"
-        "<code>LA to Phoenix</code>\n"
-        "<code>Atlanta</code>\n\n"
-        "Or use the buttons below.",
+        "I pull <b>real broker leads</b> (company + phone) from live US loads.\n\n"
+        "Tap «🔥 Get leads» or try:\n"
+        "<code>/leads Chicago</code>\n"
+        "<code>/leads Dallas - Atlanta</code>",
         reply_markup=main_menu(),
     )
 
@@ -113,6 +138,53 @@ async def cmd_start(message: Message, state: FSMContext, service: LoadService) -
 @router.message(F.text.in_({"ℹ️ Help", "ℹ️ Помощь"}))
 async def cmd_help(message: Message) -> None:
     await message.answer(HELP_TEXT, reply_markup=main_menu())
+
+
+@router.message(Command("leads"))
+@router.message(F.text == "🔥 Get leads")
+async def cmd_leads(message: Message, state: FSMContext, service: LoadService) -> None:
+    text = (message.text or "").strip()
+    # /leads Chicago - Dallas  OR bare button
+    if text.startswith("/leads"):
+        arg = text.replace("/leads", "", 1).strip()
+        if arg:
+            query = parse_route_text(arg)
+            await _send_leads(message, service, query)
+            return
+    # Button without args → ask for city/lane OR generate nationwide
+    await state.set_state(LeadStates.waiting_route)
+    await message.answer(
+        "Where should I pull leads from?\n\n"
+        "Send a city/lane, e.g.\n"
+        "<code>Chicago</code>\n"
+        "<code>Dallas - Atlanta</code>\n\n"
+        "Or send <code>all</code> for a multi-hub US sweep."
+    )
+
+
+@router.message(LeadStates.waiting_route)
+async def leads_route_entered(message: Message, state: FSMContext, service: LoadService) -> None:
+    text = (message.text or "").strip()
+    if not text:
+        await message.answer("Send a city, lane, or <code>all</code>.")
+        return
+    await state.clear()
+    if text.lower() in {"all", "us", "usa", "*", "any"}:
+        await _send_leads(message, service, None)
+        return
+    query = parse_route_text(text)
+    await _send_leads(message, service, query)
+
+
+@router.callback_query(F.data.startswith("leads:"))
+async def leads_from_callback(callback: CallbackQuery, service: LoadService) -> None:
+    await callback.answer()
+    raw = (callback.data or "").split(":", 1)[1]
+    origin_raw, destination_raw = raw.split("|", 1)
+    origin = None if origin_raw == "*" else normalize_city(origin_raw)
+    destination = None if destination_raw == "*" else normalize_city(destination_raw)
+    query = SearchQuery(origin=origin, destination=destination)
+    await _send_leads(callback.message, service, query)  # type: ignore[arg-type]
 
 
 @router.message(Command("loads"))
@@ -124,7 +196,8 @@ async def cmd_loads(message: Message, service: LoadService) -> None:
         await message.answer("No loads right now. Try a city search.")
         return
     header = f"📋 <b>Latest US loads</b> · <i>{source}</i>\n"
-    chunks = _chunk_loads(loads, header)
+    cards = [load.format_card() for load in loads]
+    chunks = _chunk_texts(cards, header)
     for chunk in chunks:
         await message.answer(chunk)
 
@@ -207,7 +280,6 @@ async def watch_from_callback(
     )
     await callback.message.answer(  # type: ignore[union-attr]
         f"👀 Watching <b>{origin or 'any'} → {destination or 'any'}</b>.\n"
-        "I'll send matching US loads here.\n"
         "Clear watches: /unwatch"
     )
 
@@ -268,7 +340,7 @@ async def quick_route_search(
     if current is not None:
         return
     text = message.text or ""
-    if text in MENU_TEXTS or text.startswith(("🔍", "👀", "📋", "ℹ️", "/")):
+    if text in MENU_TEXTS or text.startswith(("🔍", "👀", "📋", "ℹ️", "🔥", "/")):
         return
     query = parse_route_text(text)
     await _send_search_results(message, service, query)

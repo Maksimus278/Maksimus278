@@ -8,3 +8,7 @@ class SearchStates(StatesGroup):
 
 class WatchStates(StatesGroup):
     waiting_route = State()
+
+
+class LeadStates(StatesGroup):
+    waiting_route = State()

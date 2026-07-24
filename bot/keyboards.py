@@ -4,8 +4,9 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardBu
 def main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="🔍 Find load"), KeyboardButton(text="👀 My watches")],
-            [KeyboardButton(text="📋 All loads"), KeyboardButton(text="ℹ️ Help")],
+            [KeyboardButton(text="🔥 Get leads"), KeyboardButton(text="🔍 Find load")],
+            [KeyboardButton(text="📋 All loads"), KeyboardButton(text="👀 My watches")],
+            [KeyboardButton(text="ℹ️ Help")],
         ],
         resize_keyboard=True,
     )
@@ -33,6 +34,12 @@ def after_search_keyboard(origin: str | None, destination: str | None) -> Inline
     d = destination or "*"
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔥 Leads for this lane",
+                    callback_data=f"leads:{o}|{d}",
+                )
+            ],
             [
                 InlineKeyboardButton(
                     text="👀 Watch this lane",
