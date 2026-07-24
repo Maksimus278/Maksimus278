@@ -110,13 +110,23 @@ class LoadRepository:
     def all(self) -> list[Load]:
         return list(self._loads)
 
-    def search(self, query: SearchQuery, limit: int = 10) -> list[Load]:
+    def search(self, query: SearchQuery, limit: int = 25) -> list[Load]:
         results: list[Load] = []
+        # One city only → match origin OR destination so users always see loads.
+        either_city = query.origin if query.origin and not query.destination else None
+
         for load in self._loads:
-            if not cities_match(query.origin, load.cities_origin()):
-                continue
-            if not cities_match(query.destination, load.cities_destination()):
-                continue
+            if either_city:
+                if not (
+                    cities_match(either_city, load.cities_origin())
+                    or cities_match(either_city, load.cities_destination())
+                ):
+                    continue
+            else:
+                if not cities_match(query.origin, load.cities_origin()):
+                    continue
+                if not cities_match(query.destination, load.cities_destination()):
+                    continue
             if query.truck_type and query.truck_type.lower() not in load.truck_type.lower():
                 continue
             if query.min_weight is not None and load.weight_lbs < query.min_weight:

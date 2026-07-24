@@ -10,52 +10,98 @@ from bot.keyboards import (
     main_menu,
     truck_type_keyboard,
 )
-from bot.models import SearchQuery, WatchFilter
+from bot.models import Load, SearchQuery, WatchFilter
 from bot.search import LoadRepository, normalize_city, parse_route_text
 from bot.states import SearchStates
 
 router = Router()
 
 HELP_TEXT = (
-    "I find <b>US freight loads</b> by lane.\n\n"
+    "I find <b>US freight loads</b> — big board, many lanes.\n\n"
     "<b>How to search</b>\n"
     "• Tap «🔍 Find load»\n"
-    "• Or type a route: <code>Chicago - Dallas</code>\n"
+    "• Route: <code>Chicago - Dallas</code>\n"
     "• Or: <code>LA to Phoenix</code>\n"
-    "• Or origin only: <code>Atlanta</code>\n\n"
+    "• City only: <code>Atlanta</code> / <code>Texas</code> city names\n\n"
     "<b>Commands</b>\n"
     "/search — guided search\n"
+    "/loads — latest US loads\n"
     "/watch Chicago - Dallas — watch a lane\n"
     "/watches — my watches\n"
     "/unwatch — clear watches\n"
-    "/loads — latest US loads\n"
     "/help — help"
 )
 
+MENU_TEXTS = {
+    "🔍 Find load",
+    "🔍 Найти груз",
+    "👀 My watches",
+    "👀 Мои подписки",
+    "📋 All loads",
+    "📋 Все грузы",
+    "ℹ️ Help",
+    "ℹ️ Помощь",
+}
 
-def _format_results(loads: list, query: SearchQuery) -> str:
+
+def _format_header(total: int, query: SearchQuery, shown: int) -> str:
     origin = query.origin or "any"
     destination = query.destination or "any"
-    header = f"🔎 US loads <b>{origin} → {destination}</b>: <b>{len(loads)}</b>\n"
+    return (
+        f"🔎 US loads <b>{origin} → {destination}</b>\n"
+        f"Found <b>{total}</b> · showing <b>{shown}</b>\n"
+    )
+
+
+def _chunk_loads(loads: list[Load], header: str, max_len: int = 3500) -> list[str]:
     if not loads:
-        return (
+        return [
             header
-            + "\nNothing found for this lane.\n"
-            "Try another city or watch the lane — I'll notify you when a load appears."
-        )
-    body = "\n\n".join(load.format_card() for load in loads)
-    return header + "\n" + body
+            + "\nNothing found for this filter.\n"
+            "Try another city (Chicago, Dallas, LA, Atlanta…) or /loads"
+        ]
+
+    chunks: list[str] = []
+    current = header
+    for load in loads:
+        card = "\n\n" + load.format_card()
+        if len(current) + len(card) > max_len and current != header:
+            chunks.append(current)
+            current = "<i>…more loads</i>" + card
+        else:
+            current += card
+    chunks.append(current)
+    return chunks
+
+
+async def _send_search_results(
+    message: Message,
+    repo: LoadRepository,
+    query: SearchQuery,
+    limit: int = 20,
+) -> None:
+    loads = repo.search(query, limit=limit)
+    # For counting, peek a bit higher without sending everything
+    total_preview = len(repo.search(query, limit=500))
+    header = _format_header(total_preview, query, len(loads))
+    chunks = _chunk_loads(loads, header)
+    for i, chunk in enumerate(chunks):
+        kwargs = {}
+        if i == len(chunks) - 1:
+            kwargs["reply_markup"] = after_search_keyboard(query.origin, query.destination)
+        await message.answer(chunk, **kwargs)
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext) -> None:
+async def cmd_start(message: Message, state: FSMContext, repo: LoadRepository) -> None:
     await state.clear()
     await message.answer(
         "🚛 <b>ProxyBot — US Load Board</b>\n\n"
-        "Search American freight loads, for example:\n"
+        f"Board size: <b>{len(repo.all())}</b> loads\n\n"
+        "Search American freight, for example:\n"
         "<code>Chicago → Dallas</code>\n"
         "<code>LA to Phoenix</code>\n"
-        "<code>Atlanta - Miami</code>\n\n"
+        "<code>Atlanta</code>\n\n"
         "Or use the buttons below.",
         reply_markup=main_menu(),
     )
@@ -70,12 +116,14 @@ async def cmd_help(message: Message) -> None:
 @router.message(Command("loads"))
 @router.message(F.text.in_({"📋 All loads", "📋 Все грузы"}))
 async def cmd_loads(message: Message, repo: LoadRepository) -> None:
-    loads = repo.all()[:8]
+    loads = repo.all()[:15]
     if not loads:
         await message.answer("No loads in the board yet.")
         return
-    text = "📋 <b>Latest US loads</b>\n\n" + "\n\n".join(load.format_card() for load in loads)
-    await message.answer(text)
+    header = f"📋 <b>Latest US loads</b> · board <b>{len(repo.all())}</b>\n"
+    chunks = _chunk_loads(loads, header)
+    for chunk in chunks:
+        await message.answer(chunk)
 
 
 @router.message(Command("search"))
@@ -83,9 +131,10 @@ async def cmd_loads(message: Message, repo: LoadRepository) -> None:
 async def cmd_search(message: Message, state: FSMContext) -> None:
     await state.set_state(SearchStates.waiting_route)
     await message.answer(
-        "Enter a US lane:\n"
-        "<code>Origin - Destination</code>\n\n"
-        "Examples: <code>Chicago - Dallas</code>, <code>LA to Phoenix</code>",
+        "Enter a US lane or city:\n"
+        "<code>Chicago - Dallas</code>\n"
+        "<code>LA to Phoenix</code>\n"
+        "<code>Atlanta</code>",
     )
 
 
@@ -99,12 +148,12 @@ async def search_route_entered(message: Message, state: FSMContext) -> None:
     await state.set_state(SearchStates.waiting_truck)
     await message.answer(
         f"Lane: <b>{query.origin or 'any'} → {query.destination or 'any'}</b>\n"
-        "Pick equipment type:",
+        "Pick equipment (or Any for all):",
         reply_markup=truck_type_keyboard(),
     )
 
 
-@router.callback_query(F.data.startswith("truck:"), SearchStates.waiting_truck)
+@router.callback_query(F.data.startswith("truck:"))
 async def search_truck_chosen(
     callback: CallbackQuery,
     state: FSMContext,
@@ -112,18 +161,20 @@ async def search_truck_chosen(
 ) -> None:
     await callback.answer()
     data = await state.get_data()
-    query = SearchQuery.model_validate(data.get("query", {}))
+    raw_query = data.get("query")
+    if not raw_query:
+        await callback.message.answer(  # type: ignore[union-attr]
+            "Search expired. Tap «🔍 Find load» or type a route like <code>Chicago - Dallas</code>."
+        )
+        await state.clear()
+        return
+
+    query = SearchQuery.model_validate(raw_query)
     truck = (callback.data or "").split(":", 1)[1]
     if truck != "any":
         query.truck_type = truck
     await state.clear()
-
-    loads = repo.search(query)
-    text = _format_results(loads, query)
-    await callback.message.answer(  # type: ignore[union-attr]
-        text,
-        reply_markup=after_search_keyboard(query.origin, query.destination),
-    )
+    await _send_search_results(callback.message, repo, query)  # type: ignore[arg-type]
 
 
 @router.callback_query(F.data == "search:new")
@@ -131,7 +182,7 @@ async def search_new(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await state.set_state(SearchStates.waiting_route)
     await callback.message.answer(  # type: ignore[union-attr]
-        "Enter a US lane:\n<code>Origin - Destination</code>"
+        "Enter a US lane or city:\n<code>Origin - Destination</code>"
     )
 
 
@@ -198,18 +249,46 @@ async def cmd_unwatch(message: Message, repo: LoadRepository) -> None:
     await message.answer(f"Cleared watches: {removed}")
 
 
+@router.message(Command("reload"))
+async def cmd_reload(message: Message, repo: LoadRepository) -> None:
+    repo.reload()
+    await message.answer(f"Reloaded board: <b>{len(repo.all())}</b> loads")
+
+
 @router.message(F.text.regexp(r"(?i).*(->|→|-|—|–|\bto\b).*"))
 async def quick_route_search(message: Message, state: FSMContext, repo: LoadRepository) -> None:
     current = await state.get_state()
     if current is not None:
         return
-    # Ignore menu buttons that contain dashes in Russian/legacy text
     text = message.text or ""
-    if text.startswith(("🔍", "👀", "📋", "ℹ️")):
+    if text in MENU_TEXTS or text.startswith(("🔍", "👀", "📋", "ℹ️", "/")):
         return
     query = parse_route_text(text)
-    loads = repo.search(query)
+    await _send_search_results(message, repo, query)
+
+
+@router.message(F.text)
+async def city_or_fallback(message: Message, state: FSMContext, repo: LoadRepository) -> None:
+    current = await state.get_state()
+    if current is not None:
+        return
+    text = (message.text or "").strip()
+    if not text or text in MENU_TEXTS or text.startswith("/"):
+        return
+
+    query = parse_route_text(text)
+    loads = repo.search(query, limit=20)
+    if loads:
+        await _send_search_results(message, repo, query)
+        return
+
     await message.answer(
-        _format_results(loads, query),
-        reply_markup=after_search_keyboard(query.origin, query.destination),
+        "No exact match.\n"
+        f"Board has <b>{len(repo.all())}</b> US loads.\n\n"
+        "Try:\n"
+        "<code>Chicago - Dallas</code>\n"
+        "<code>LA to Phoenix</code>\n"
+        "<code>Atlanta</code>\n"
+        "or tap /loads",
+        reply_markup=main_menu(),
     )

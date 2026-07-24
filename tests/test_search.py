@@ -45,6 +45,15 @@ def test_search_us_loads(tmp_path):
             "weight_lbs": 38000,
             "truck_type": "reefer",
             "rate": 1450
+          },
+          {
+            "id": "3",
+            "origin": "Dallas, TX",
+            "destination": "New York, NY",
+            "cargo": "Retail",
+            "weight_lbs": 36000,
+            "truck_type": "dry van",
+            "rate": 4000
           }
         ]
         """,
@@ -58,3 +67,16 @@ def test_search_us_loads(tmp_path):
     reefers = repo.search(SearchQuery(origin="la", truck_type="reefer"))
     assert len(reefers) == 1
     assert reefers[0].id == "2"
+
+    # Single city matches origin OR destination
+    nyc = repo.search(SearchQuery(origin="nyc"))
+    assert [x.id for x in nyc] == ["3"]
+
+
+def test_generated_board_has_many_loads():
+    from pathlib import Path
+
+    repo = LoadRepository(Path("data/loads.json"))
+    assert len(repo.all()) >= 500
+    chicago = repo.search(SearchQuery(origin="chicago"), limit=100)
+    assert len(chicago) >= 10

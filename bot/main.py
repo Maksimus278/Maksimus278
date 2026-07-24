@@ -16,22 +16,29 @@ from bot.search import LoadRepository
 logger = logging.getLogger(__name__)
 
 
+def build_dispatcher(settings, repo: LoadRepository) -> Dispatcher:
+    # Detach router if a previous crashed run already attached it.
+    router._parent_router = None  # noqa: SLF001
+
+    dp = Dispatcher(storage=MemoryStorage())
+    dp["repo"] = repo
+    dp.message.middleware(AccessMiddleware(settings))
+    dp.callback_query.middleware(AccessMiddleware(settings))
+    dp.include_router(router)
+    return dp
+
+
 async def run_bot() -> None:
     settings = get_settings()
     repo = LoadRepository(settings.loads_path)
 
-    # Explicit timeout so long-polling cannot hang forever on a dead socket.
     session = AiohttpSession(timeout=60)
     bot = Bot(
         token=settings.bot_token,
         session=session,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
-    dp = Dispatcher(storage=MemoryStorage())
-    dp["repo"] = repo
-    dp.message.middleware(AccessMiddleware(settings))
-    dp.callback_query.middleware(AccessMiddleware(settings))
-    dp.include_router(router)
+    dp = build_dispatcher(settings, repo)
 
     logger.info("Loaded %s US loads from %s", len(repo.all()), settings.loads_path)
     await bot.delete_webhook(drop_pending_updates=True)
@@ -56,7 +63,8 @@ async def main() -> None:
     while True:
         try:
             await run_bot()
-            backoff = 3
+            # Clean exit from polling (e.g. signal) — stop loop.
+            break
         except asyncio.CancelledError:
             raise
         except Exception:

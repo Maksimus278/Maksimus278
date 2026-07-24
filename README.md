@@ -4,9 +4,9 @@ Telegram bot [@Proxy007Bot](https://t.me/Proxy007Bot) for finding **American fre
 
 ## Features
 
-- Search US loads by lane (`Chicago - Dallas`, `LA to Phoenix`)
-- Equipment filter (dry van, reefer, flatbed, box truck, hotshot, power only)
-- Latest loads feed
+- Large US board (`data/loads.json`, 600+ demo loads)
+- Search by lane (`Chicago - Dallas`, `LA to Phoenix`) or city (`Atlanta`)
+- Equipment filter (dry van, reefer, flatbed, box truck, hotshot, power only…)
 - Lane watches (`/watch`)
 
 ## Run
@@ -16,42 +16,26 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# put BOT_TOKEN from @BotFather into .env
 python -m bot.main
 ```
 
-Then open the bot and try:
+Regenerate a bigger demo board:
 
-```text
-Chicago - Dallas
+```bash
+python scripts/generate_us_loads.py
 ```
 
 ## Commands
 
 | Command | Description |
 |--------|-------------|
-| `/start` | Menu |
+| `/start` | Menu + board size |
 | `/search` | Guided search |
 | `/loads` | Latest US loads |
 | `/watch Chicago - Dallas` | Watch a lane |
-| `/watches` | List watches |
-| `/unwatch` | Clear watches |
+| `/reload` | Reload `data/loads.json` |
 | `/help` | Help |
 
-## Data
+## Notes
 
-Loads live in `data/loads.json` (USD, miles, lbs). Restart the bot after editing.
-
-Current board is a **US demo dataset**. Swap in DAT / Truckstop / broker feed later via the same `LoadRepository`.
-
-## Security
-
-- Keep the token only in `.env` (gitignored)
-- If the token was shared in chat, revoke it in @BotFather
-- Optional allow-list: `ALLOWED_USER_IDS`
-
-## Tests
-
-```bash
-pytest -q
-```
+Current board is a **generated US demo dataset** (USD / miles / lbs). Replace with DAT / Truckstop / broker API via the same `LoadRepository` when ready.
