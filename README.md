@@ -1,13 +1,16 @@
-# 🚛 ProxyBot — US Load Search Bot
+# 🚛 ProxyBot — Live US Load Search Bot
 
-Telegram bot [@Proxy007Bot](https://t.me/Proxy007Bot) for finding **American freight loads**.
+Telegram bot [@Proxy007Bot](https://t.me/Proxy007Bot) that searches **real American freight loads**.
 
-## Features
+## Data source
 
-- Large US board (`data/loads.json`, 600+ demo loads)
-- Search by lane (`Chicago - Dallas`, `LA to Phoenix`) or city (`Atlanta`)
-- Equipment filter (dry van, reefer, flatbed, box truck, hotshot, power only…)
-- Lane watches (`/watch`)
+By default the bot queries the **public Trulos load board APIs** (live):
+
+- geo lookup for cities
+- radius load search around origin/destination
+- broker company + phone when available
+
+If the live API is down, it falls back to local `data/loads.json`.
 
 ## Run
 
@@ -16,26 +19,28 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
+# put BOT_TOKEN from @BotFather into .env
 python -m bot.main
 ```
 
-Regenerate a bigger demo board:
+Examples in Telegram:
 
-```bash
-python scripts/generate_us_loads.py
+```text
+Chicago
+LA to Phoenix
+Atlanta - Miami
+/loads
 ```
 
-## Commands
+## Env
 
-| Command | Description |
-|--------|-------------|
-| `/start` | Menu + board size |
-| `/search` | Guided search |
-| `/loads` | Latest US loads |
-| `/watch Chicago - Dallas` | Watch a lane |
-| `/reload` | Reload `data/loads.json` |
-| `/help` | Help |
+| Variable | Meaning |
+|---------|---------|
+| `BOT_TOKEN` | Telegram bot token |
+| `LIVE_LOADS` | `true` = live Trulos (default) |
+| `SEARCH_RADIUS_MI` | search radius in miles (default 200) |
+| `LOADS_PATH` | local fallback JSON |
 
 ## Notes
 
-Current board is a **generated US demo dataset** (USD / miles / lbs). Replace with DAT / Truckstop / broker API via the same `LoadRepository` when ready.
+DAT / Truckstop / CHR Carrier APIs need paid accounts + keys. This bot uses Trulos’ public no-login board endpoints for live results without credentials.

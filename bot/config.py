@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     bot_token: str = Field(alias="BOT_TOKEN")
     allowed_user_ids: str = Field(default="", alias="ALLOWED_USER_IDS")
     loads_path: Path = Field(default=ROOT_DIR / "data" / "loads.json", alias="LOADS_PATH")
+    live_loads: bool = Field(default=True, alias="LIVE_LOADS")
+    search_radius_mi: int = Field(default=200, alias="SEARCH_RADIUS_MI")
 
     @property
     def allowed_ids(self) -> set[int]:

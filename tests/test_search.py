@@ -1,4 +1,5 @@
 from bot.models import SearchQuery
+from bot.providers.trulos import map_trulos_row
 from bot.search import LoadRepository, normalize_city, parse_route_text
 
 
@@ -68,15 +69,34 @@ def test_search_us_loads(tmp_path):
     assert len(reefers) == 1
     assert reefers[0].id == "2"
 
-    # Single city matches origin OR destination
     nyc = repo.search(SearchQuery(origin="nyc"))
     assert [x.id for x in nyc] == ["3"]
 
 
-def test_generated_board_has_many_loads():
-    from pathlib import Path
-
-    repo = LoadRepository(Path("data/loads.json"))
-    assert len(repo.all()) >= 500
-    chicago = repo.search(SearchQuery(origin="chicago"), limit=100)
-    assert len(chicago) >= 10
+def test_map_trulos_row_real_shape():
+    load = map_trulos_row(
+        {
+            "LoadID": 21456690,
+            "PickupDate": "2026-07-24",
+            "OriginCity": "CHICAGO",
+            "OriginState": "IL",
+            "DestinationCity": "SPRINGFIELD",
+            "DestinationState": "MO",
+            "Equipment": "Flatbed/Step Deck",
+            "Rate": "1650",
+            "Weight": 48000,
+            "loadSize": "Full",
+            "ContactName": "Dispatch Omaha",
+            "ContactPhone": "4029911641",
+            "CompanyName": "KLC Logistics, INC",
+            "Comment": "tarps",
+            "DistanceMiles": 450,
+        }
+    )
+    assert load.id == "TR-21456690"
+    assert load.origin == "Chicago, IL"
+    assert load.destination == "Springfield, MO"
+    assert load.rate == 1650
+    assert load.rate_per_mile == 3.67
+    assert load.source == "Trulos (live)"
+    assert "4029911641" in load.contact

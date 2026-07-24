@@ -11,17 +11,19 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from bot.config import get_settings
 from bot.handlers import router
 from bot.middlewares import AccessMiddleware
+from bot.providers.trulos import TrulosClient
 from bot.search import LoadRepository
+from bot.service import LoadService
 
 logger = logging.getLogger(__name__)
 
 
-def build_dispatcher(settings, repo: LoadRepository) -> Dispatcher:
-    # Detach router if a previous crashed run already attached it.
+def build_dispatcher(settings, repo: LoadRepository, service: LoadService) -> Dispatcher:
     router._parent_router = None  # noqa: SLF001
 
     dp = Dispatcher(storage=MemoryStorage())
     dp["repo"] = repo
+    dp["service"] = service
     dp.message.middleware(AccessMiddleware(settings))
     dp.callback_query.middleware(AccessMiddleware(settings))
     dp.include_router(router)
@@ -31,6 +33,12 @@ def build_dispatcher(settings, repo: LoadRepository) -> Dispatcher:
 async def run_bot() -> None:
     settings = get_settings()
     repo = LoadRepository(settings.loads_path)
+    service = LoadService(
+        repo,
+        live=TrulosClient(),
+        use_live=settings.live_loads,
+        radius_mi=settings.search_radius_mi,
+    )
 
     session = AiohttpSession(timeout=60)
     bot = Bot(
@@ -38,14 +46,20 @@ async def run_bot() -> None:
         session=session,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
-    dp = build_dispatcher(settings, repo)
+    dp = build_dispatcher(settings, repo, service)
 
-    logger.info("Loaded %s US loads from %s", len(repo.all()), settings.loads_path)
+    logger.info(
+        "Bot ready · live=%s · local_fallback=%s · radius=%smi",
+        settings.live_loads,
+        len(repo.all()),
+        settings.search_radius_mi,
+    )
     await bot.delete_webhook(drop_pending_updates=True)
     try:
         await dp.start_polling(
             bot,
             repo=repo,
+            service=service,
             allowed_updates=["message", "callback_query"],
             polling_timeout=25,
         )
@@ -63,7 +77,6 @@ async def main() -> None:
     while True:
         try:
             await run_bot()
-            # Clean exit from polling (e.g. signal) — stop loop.
             break
         except asyncio.CancelledError:
             raise
