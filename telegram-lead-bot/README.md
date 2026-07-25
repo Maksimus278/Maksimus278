@@ -25,17 +25,49 @@ Priority = fleet size near **300 trucks** (not a 300-point score).
 
 ## Live bot
 
-Configured for **@Moneymakeybot**. With `TELEGRAM_ALLOWED_USER_IDS` empty, the **first person who sends `/start` becomes the owner**.
+Configured for **@Moneymakeybot**.
+
+### Why it “dies every day” on Cursor
+
+Cursor Cloud VMs **shut down when idle**. Anything started there (tmux, `run_bot.sh`) is **not 24/7 hosting**.  
+For a bot that stays online, deploy it once on Railway / Render / a VPS (below).
+
+### Run locally (temporary)
 
 ```bash
 cd telegram-lead-bot
 cp .env.example .env   # add TELEGRAM_BOT_TOKEN
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python -m bot
+bash ./run_bot.sh      # auto-restarts on crash
 ```
 
-Then open Telegram → `@Moneymakeybot` → `/start` → `/next`.
+Then open Telegram → `@Moneymakeybot` → `/ping` → `/next`.
+
+### Deploy 24/7 on Railway (recommended)
+
+1. Push this repo to GitHub (already done if you’re on the PR branch).
+2. Go to [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo**.
+3. Set **Root Directory** to `telegram-lead-bot`.
+4. Add variables:
+
+```env
+TELEGRAM_BOT_TOKEN=your_token_from_BotFather
+TELEGRAM_ALLOWED_USER_IDS=7889069727,8724669761
+TELEGRAM_ALLOWED_USERNAMES=mixerius
+LEADS_CSV_PATH=data/fleetguard-leads.csv
+LEADS_DB_PATH=data/leads_state.db
+TARGET_TRUCKS=300
+TARGET_TRUCK_MIN=200
+TARGET_TRUCK_MAX=450
+```
+
+5. Deploy. No public domain needed — the bot only talks outbound to Telegram.
+6. In Telegram send `/ping`. If you get `pong`, it’s online for good.
+
+Optional: attach a Railway **Volume** on `/app/data` so `leads_state.db` survives redeploys.
+
+`Dockerfile`, `Procfile`, `railway.toml`, and `render.yaml` are included in this folder.
 
 ## Setup (5 minutes)
 
