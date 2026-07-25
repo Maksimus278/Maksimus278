@@ -92,6 +92,11 @@ def build_app() -> Application:
 
 
 def main() -> None:
+    if not config.TELEGRAM_BOT_TOKEN or "ABC-DEF" in config.TELEGRAM_BOT_TOKEN:
+        raise SystemExit(
+            "TELEGRAM_BOT_TOKEN is missing or still a placeholder. "
+            "Set it in Railway → Variables, then Redeploy."
+        )
     app = build_app()
     log.info("Starting FleetGuard lead bot (allowed users: %s)", sorted(config.ALLOWED_USER_IDS))
     app.run_polling(

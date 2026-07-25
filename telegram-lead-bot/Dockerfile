@@ -17,4 +17,6 @@ COPY run_bot.sh .
 RUN mkdir -p /app/data /app/logs \
     && chmod +x run_bot.sh
 
-CMD ["bash", "./run_bot.sh"]
+# Railway restarts the container on crash (see railway.toml).
+# Prefer direct python entry so deploy logs show the real error.
+CMD ["python", "-m", "bot"]
