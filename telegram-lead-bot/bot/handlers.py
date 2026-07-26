@@ -13,6 +13,7 @@ from .keyboards import lead_keyboard, remove_keyboard, search_keyboard, share_co
 from .leads import LeadStore
 from .phones import contact_name_parts, normalize_phone, to_e164
 from .pitches import copy_text_version, format_lead_card, personalized_pitch
+from .twilio_calls import TwilioCallError, start_click_to_call, twilio_configured
 
 log = logging.getLogger(__name__)
 
@@ -237,8 +238,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/findtg <phone> — look up a saved Telegram id by phone\n"
         "/tglist — recent phone → Telegram links\n"
         "/setname Your Name — put your name into copy-text pitches\n"
-        "/setmyphone 5551234567 — put your number into voicemail/email\n"
+        "/setmyphone 5551234567 — YOUR phone for Twilio click-to-call\n"
         "/myname — show saved name/number\n\n"
+        "Call now = Twilio rings you, then connects the lead "
+        "(set /setmyphone first).\n"
         "Tap Copy SMS under each lead for a text ready to paste.\n"
         "Note: Telegram cannot auto-discover strangers’ ids from CSV phones. "
         "Share a contact or set them with /settg.",
@@ -637,16 +640,52 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     if data.startswith("call:"):
         usdot = data.split(":", 1)[1]
+        if _is_duplicate_action(context, f"call:{usdot}", ttl_sec=8.0):
+            return
         lead = lead_store.get_lead(usdot)
         if not lead:
             await query.message.reply_text("Lead not found.")
             return
         phone = to_e164(lead.phone) or lead.phone or "No phone on file"
+        _, agent_phone = _sender_bits(update, context)
+
+        if twilio_configured():
+            if not to_e164(agent_phone):
+                await query.message.reply_text(
+                    f"Call {lead.company}\n"
+                    f"Number:\n{phone}\n\n"
+                    "To dial via Twilio, first save your phone:\n"
+                    "/setmyphone 5551234567\n"
+                    "Then tap Call again — Twilio will ring YOU, then connect the lead."
+                )
+                return
+            try:
+                sid = start_click_to_call(
+                    agent_phone=agent_phone,
+                    lead_phone=lead.phone,
+                    company=lead.company,
+                    officer=lead.officer,
+                )
+            except TwilioCallError as exc:
+                await query.message.reply_text(
+                    f"Could not start call: {exc}\n"
+                    f"Lead number:\n{phone}"
+                )
+                return
+            await query.message.reply_text(
+                f"Calling your phone now…\n"
+                f"Answer it — then you will be connected to {lead.company}.\n"
+                f"Ask for: {lead.officer or 'owner / safety / compliance'}\n"
+                f"Lead: {phone}\n"
+                f"Call id: {sid}"
+            )
+            return
+
         await query.message.reply_text(
             f"Call {lead.company}\n"
             f"Ask for: {lead.officer or 'owner / safety / compliance'}\n"
             f"Number:\n{phone}\n\n"
-            f"Tap Save / Message for a tappable contact card."
+            f"Twilio not configured. Tap Save / Message for a contact card."
         )
         return
 

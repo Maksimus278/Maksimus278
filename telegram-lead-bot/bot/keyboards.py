@@ -17,7 +17,7 @@ def lead_keyboard(
             InlineKeyboardButton("Save / Message", callback_data=f"contact:{usdot}"),
         ],
         [
-            InlineKeyboardButton("Call info", callback_data=f"call:{usdot}"),
+            InlineKeyboardButton("Call now", callback_data=f"call:{usdot}"),
             InlineKeyboardButton("Email", callback_data=f"email:{usdot}"),
         ],
         [

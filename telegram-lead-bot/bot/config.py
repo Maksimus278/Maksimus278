@@ -74,6 +74,11 @@ TARGET_TRUCKS = int(os.getenv("TARGET_TRUCKS", "300"))
 TARGET_TRUCK_MIN = int(os.getenv("TARGET_TRUCK_MIN", "200"))
 TARGET_TRUCK_MAX = int(os.getenv("TARGET_TRUCK_MAX", "450"))
 
+# Optional Twilio click-to-call (human initiates each call — not autodial)
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "").strip()
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
+TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "").strip()
+
 
 def claim_owner(user_id: int) -> bool:
     """Claim bot ownership for the first user when auto-claim is enabled."""
