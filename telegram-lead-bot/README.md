@@ -48,7 +48,9 @@ Then open Telegram → `@Moneymakeybot` → `/ping` → `/next`.
 
 1. Push this repo to GitHub (already done if you’re on the PR branch).
 2. Go to [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo**.
-3. Set **Root Directory** to `telegram-lead-bot`.
+3. **Critical — Source settings** (this fixes “Deployment failed to build”):
+   - **Branch:** `cursor/fleetguard-telegram-bot-1e42` (not `main` — `main` has no bot code yet)
+   - **Root Directory:** leave **empty** (repo-root `Dockerfile` builds the bot)
 4. Add variables:
 
 ```env
