@@ -18,6 +18,9 @@ def lead_keyboard(
         ],
         [
             InlineKeyboardButton("Call now", callback_data=f"call:{usdot}"),
+            InlineKeyboardButton("Leave VM + link", callback_data=f"vm:{usdot}"),
+        ],
+        [
             InlineKeyboardButton("Email", callback_data=f"email:{usdot}"),
         ],
         [

@@ -15,6 +15,47 @@ def _first_name(lead: Lead) -> str:
     return name.split()[0].title()
 
 
+def link_sms_text(
+    lead: Lead,
+    *,
+    sender_name: str = "Your Name",
+) -> str:
+    """Short SMS with a real clickable trial link."""
+    first = _first_name(lead)
+    company = lead.company or lead.legal_name or "your fleet"
+    dot = lead.usdot or "your DOT"
+    me = (sender_name or "Your Name").strip() or "Your Name"
+    return (
+        f"Hi {first}, {me} at FleetGuardAI. "
+        f"14-day trial for {company}: {SITE_URL} "
+        f"— Start Trial, add DOT {dot}."
+    )
+
+
+def voicemail_spoken_text(
+    lead: Lead,
+    *,
+    sender_name: str = "Your Name",
+) -> str:
+    """TTS script for a voicemail drop (URLs spoken so they can be typed)."""
+    first = _first_name(lead)
+    company = lead.company or lead.legal_name or "your fleet"
+    trucks = lead.power_units or "a few"
+    dot = lead.usdot or "your D O T number"
+    me = (sender_name or "Your Name").strip() or "Your Name"
+    # Spell URL for voicemail; visual voicemail may still surface the domain.
+    return (
+        f"Hi {first}, this is {me} with Fleet Guard A I. "
+        f"Quick message for {company}, about {trucks} trucks. "
+        f"We keep C D L s, medical cards, insurance, and expirations in one dashboard "
+        f"so missing paperwork does not park a truck. "
+        f"Start a 14 day trial at w w w dot fleet guard logistics dot com. "
+        f"That is fleetguardlogistics.com. "
+        f"Click Start Trial and add D O T {dot}. "
+        f"Cancel before day 14 if it is not a fit. Again, fleetguardlogistics.com. Thank you."
+    )
+
+
 def sms_text(
     lead: Lead,
     *,

@@ -12,8 +12,8 @@ from . import config
 from .keyboards import lead_keyboard, remove_keyboard, search_keyboard, share_contact_keyboard
 from .leads import LeadStore
 from .phones import contact_name_parts, normalize_phone, to_e164
-from .pitches import copy_text_version, format_lead_card, personalized_pitch
-from .twilio_calls import TwilioCallError, start_click_to_call, twilio_configured
+from .pitches import copy_text_version, format_lead_card, link_sms_text, personalized_pitch, voicemail_spoken_text
+from .twilio_calls import TwilioCallError, leave_voicemail, send_link_sms, start_click_to_call, twilio_configured
 
 log = logging.getLogger(__name__)
 
@@ -687,6 +687,62 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             f"Number:\n{phone}\n\n"
             f"Twilio not configured. Tap Save / Message for a contact card."
         )
+        return
+
+    if data.startswith("vm:"):
+        usdot = data.split(":", 1)[1]
+        if _is_duplicate_action(context, f"vm:{usdot}", ttl_sec=15.0):
+            return
+        lead = lead_store.get_lead(usdot)
+        if not lead:
+            await query.message.reply_text("Lead not found.")
+            return
+        phone = to_e164(lead.phone) or lead.phone or ""
+        if not phone:
+            await query.message.reply_text("No phone on file for this lead.")
+            return
+        if not twilio_configured():
+            await query.message.reply_text(
+                "Twilio not configured. Cannot leave voicemail or send link SMS."
+            )
+            return
+
+        sender_name, _ = _sender_bits(update, context)
+        spoken = voicemail_spoken_text(lead, sender_name=sender_name)
+        sms_body = link_sms_text(lead, sender_name=sender_name)
+
+        vm_sid = ""
+        sms_sid = ""
+        errors: list[str] = []
+        try:
+            vm_sid = leave_voicemail(lead_phone=lead.phone, spoken_script=spoken)
+        except TwilioCallError as exc:
+            errors.append(f"Voicemail: {exc}")
+        try:
+            sms_sid = send_link_sms(lead_phone=lead.phone, body=sms_body)
+        except TwilioCallError as exc:
+            errors.append(f"SMS link: {exc}")
+
+        if vm_sid or sms_sid:
+            lead_store.set_status(usdot, "contacted", clear_follow_up=True)
+
+        lines = [
+            f"Voicemail + link for {lead.company}",
+            f"To: {phone}",
+        ]
+        if vm_sid:
+            lines.append(f"Voicemail call started: {vm_sid}")
+        if sms_sid:
+            lines.append(f"SMS with clickable link sent: {sms_sid}")
+            lines.append(f"SMS text:\n{sms_body}")
+        if errors:
+            lines.append("Issues:")
+            lines.extend(f"• {e}" for e in errors)
+            lines.append(
+                "Note: Twilio Trial can only call/text verified numbers. "
+                "Upgrade Twilio to reach real fleet phones."
+            )
+        await query.message.reply_text("\n".join(lines), disable_web_page_preview=True)
         return
 
     if data.startswith("email:"):
