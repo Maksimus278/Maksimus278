@@ -9,7 +9,13 @@ from telegram.error import BadRequest, RetryAfter, TelegramError
 from telegram.ext import ContextTypes
 
 from . import config
-from .keyboards import lead_keyboard, remove_keyboard, search_keyboard, share_contact_keyboard
+from .keyboards import (
+    batch_vm_keyboard,
+    lead_keyboard,
+    remove_keyboard,
+    search_keyboard,
+    share_contact_keyboard,
+)
 from .leads import LeadStore
 from .phones import contact_name_parts, normalize_phone, to_e164
 from .pitches import copy_text_version, format_lead_card, link_sms_text, personalized_pitch, voicemail_spoken_text
@@ -212,6 +218,90 @@ def _truck_kwargs() -> dict:
     }
 
 
+BATCH_VM_MAX = 20
+BATCH_VM_DEFAULT = 10
+
+
+async def _send_vm_and_link(update: Update, context: ContextTypes.DEFAULT_TYPE, usdot: str) -> str:
+    """Run Leave VM + link for one lead. Returns status text for the user."""
+    lead_store = store(context)
+    lead = lead_store.get_lead(usdot)
+    if not lead:
+        return "Lead not found."
+    phone = to_e164(lead.phone) or ""
+    if not phone:
+        return f"{lead.company}: no phone on file."
+    if not twilio_configured():
+        return "Twilio not configured."
+
+    sender_name, _ = _sender_bits(update, context)
+    spoken = voicemail_spoken_text(lead, sender_name=sender_name)
+    sms_body = link_sms_text(lead, sender_name=sender_name)
+    vm_sid = ""
+    sms_sid = ""
+    errors: list[str] = []
+    try:
+        vm_sid = leave_voicemail(lead_phone=lead.phone, spoken_script=spoken)
+    except TwilioCallError as exc:
+        errors.append(f"Voicemail: {exc}")
+    try:
+        sms_sid = send_link_sms(lead_phone=lead.phone, body=sms_body)
+    except TwilioCallError as exc:
+        errors.append(f"SMS: {exc}")
+
+    if vm_sid or sms_sid:
+        lead_store.set_status(usdot, "contacted", clear_follow_up=True)
+
+    bits = [f"{lead.company} · {phone}"]
+    if vm_sid:
+        bits.append(f"VM {vm_sid}")
+    if sms_sid:
+        bits.append(f"SMS {sms_sid}")
+    if errors:
+        bits.append(" | ".join(errors))
+    return " · ".join(bits)
+
+
+async def _show_batch_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    queue: list[str] = list(context.user_data.get("batch_queue") or [])
+    idx = int(context.user_data.get("batch_i") or 0)
+    sent = int(context.user_data.get("batch_sent") or 0)
+    skipped = int(context.user_data.get("batch_skipped") or 0)
+    msg = update.effective_message
+    if update.callback_query and update.callback_query.message:
+        msg = update.callback_query.message
+    if not msg:
+        return
+
+    if idx >= len(queue):
+        context.user_data.pop("batch_queue", None)
+        await msg.reply_text(
+            f"Batch done.\nSent: {sent}\nSkipped: {skipped}\nTotal in queue: {len(queue)}\n"
+            f"Start another: /batchvm {BATCH_VM_DEFAULT}"
+        )
+        return
+
+    usdot = queue[idx]
+    lead = store(context).get_lead(usdot)
+    if not lead:
+        context.user_data["batch_i"] = idx + 1
+        await _show_batch_item(update, context)
+        return
+
+    phone = to_e164(lead.phone) or lead.phone or "no phone"
+    text = (
+        f"Batch VM queue {idx + 1}/{len(queue)}\n"
+        f"Sent {sent} · Skipped {skipped}\n\n"
+        f"{lead.company}\n"
+        f"DOT {lead.usdot} · {lead.power_units} trucks\n"
+        f"{lead.city}, {lead.state}\n"
+        f"Ask for: {lead.officer or 'owner / safety / compliance'}\n"
+        f"Phone: {phone}\n\n"
+        f"Confirm to send voicemail + SMS link to THIS lead only."
+    )
+    await msg.reply_text(text, reply_markup=batch_vm_keyboard(usdot))
+
+
 @allowed_only
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.effective_message.reply_text("pong — bot is alive. Try /next")
@@ -229,6 +319,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Commands:\n"
         "/ping — check bot is alive\n"
         "/next — next best ~300-truck lead + pitch\n"
+        "/batchvm [n] — queue up to 20 leads; confirm VM+SMS one by one\n"
         "/highscore — fleets closest to ~300 trucks\n"
         "/search <query> — find a company / DOT / city\n"
         "/followups — who needs follow-up\n"
@@ -255,6 +346,52 @@ async def next_lead(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.effective_message.reply_text("No new leads left. Check /followups or /stats.")
         return
     await send_lead(update, context, leads[0].usdot)
+
+
+@allowed_only
+async def batchvm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Queue N leads for manual VM+SMS confirm (max 20). Not a blast."""
+    if not twilio_configured():
+        await update.effective_message.reply_text(
+            "Twilio not configured. Set TWILIO_* env vars first."
+        )
+        return
+    n = BATCH_VM_DEFAULT
+    if context.args:
+        try:
+            n = int(context.args[0])
+        except ValueError:
+            await update.effective_message.reply_text(
+                f"Usage: /batchvm [1-{BATCH_VM_MAX}]  (default {BATCH_VM_DEFAULT})"
+            )
+            return
+    n = max(1, min(n, BATCH_VM_MAX))
+
+    lead_store = store(context)
+    # Pull extras so we can skip leads without phones
+    pool = lead_store.next_best(max(n * 8, 40), **_truck_kwargs())
+    queue: list[str] = []
+    for lead in pool:
+        if to_e164(lead.phone):
+            queue.append(lead.usdot)
+        if len(queue) >= n:
+            break
+    if not queue:
+        await update.effective_message.reply_text(
+            "No phone-ready leads left in the ~300-truck band."
+        )
+        return
+
+    context.user_data["batch_queue"] = queue
+    context.user_data["batch_i"] = 0
+    context.user_data["batch_sent"] = 0
+    context.user_data["batch_skipped"] = 0
+    await update.effective_message.reply_text(
+        f"Batch VM queue ready: {len(queue)} leads.\n"
+        f"You confirm each one — no auto-blast.\n"
+        f"Send = voicemail + SMS link · Skip = next · Stop = end."
+    )
+    await _show_batch_item(update, context)
 
 
 @allowed_only
@@ -693,56 +830,44 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         usdot = data.split(":", 1)[1]
         if _is_duplicate_action(context, f"vm:{usdot}", ttl_sec=15.0):
             return
-        lead = lead_store.get_lead(usdot)
-        if not lead:
-            await query.message.reply_text("Lead not found.")
-            return
-        phone = to_e164(lead.phone) or lead.phone or ""
-        if not phone:
-            await query.message.reply_text("No phone on file for this lead.")
-            return
-        if not twilio_configured():
+        result = await _send_vm_and_link(update, context, usdot)
+        await query.message.reply_text(result, disable_web_page_preview=True)
+        return
+
+    if data.startswith("batch:"):
+        action = data.split(":", 1)[1]
+        if action == "stop":
+            queue = context.user_data.get("batch_queue") or []
+            sent = int(context.user_data.get("batch_sent") or 0)
+            skipped = int(context.user_data.get("batch_skipped") or 0)
+            context.user_data.pop("batch_queue", None)
             await query.message.reply_text(
-                "Twilio not configured. Cannot leave voicemail or send link SMS."
+                f"Batch stopped.\nSent: {sent}\nSkipped: {skipped}\n"
+                f"Queued was: {len(queue)}\nResume with /batchvm"
             )
             return
-
-        sender_name, _ = _sender_bits(update, context)
-        spoken = voicemail_spoken_text(lead, sender_name=sender_name)
-        sms_body = link_sms_text(lead, sender_name=sender_name)
-
-        vm_sid = ""
-        sms_sid = ""
-        errors: list[str] = []
-        try:
-            vm_sid = leave_voicemail(lead_phone=lead.phone, spoken_script=spoken)
-        except TwilioCallError as exc:
-            errors.append(f"Voicemail: {exc}")
-        try:
-            sms_sid = send_link_sms(lead_phone=lead.phone, body=sms_body)
-        except TwilioCallError as exc:
-            errors.append(f"SMS link: {exc}")
-
-        if vm_sid or sms_sid:
-            lead_store.set_status(usdot, "contacted", clear_follow_up=True)
-
-        lines = [
-            f"Voicemail + link for {lead.company}",
-            f"To: {phone}",
-        ]
-        if vm_sid:
-            lines.append(f"Voicemail call started: {vm_sid}")
-        if sms_sid:
-            lines.append(f"SMS with clickable link sent: {sms_sid}")
-            lines.append(f"SMS text:\n{sms_body}")
-        if errors:
-            lines.append("Issues:")
-            lines.extend(f"• {e}" for e in errors)
-            lines.append(
-                "Note: Twilio Trial can only call/text verified numbers. "
-                "Upgrade Twilio to reach real fleet phones."
-            )
-        await query.message.reply_text("\n".join(lines), disable_web_page_preview=True)
+        if action == "skip":
+            context.user_data["batch_skipped"] = int(context.user_data.get("batch_skipped") or 0) + 1
+            context.user_data["batch_i"] = int(context.user_data.get("batch_i") or 0) + 1
+            await query.message.reply_text("Skipped.")
+            await _show_batch_item(update, context)
+            return
+        if action.startswith("send:"):
+            usdot = action.split(":", 1)[1]
+            if _is_duplicate_action(context, f"batchsend:{usdot}", ttl_sec=12.0):
+                return
+            queue = list(context.user_data.get("batch_queue") or [])
+            idx = int(context.user_data.get("batch_i") or 0)
+            if not queue or idx >= len(queue) or queue[idx] != usdot:
+                await query.message.reply_text("Batch out of sync. Start again with /batchvm")
+                return
+            result = await _send_vm_and_link(update, context, usdot)
+            context.user_data["batch_sent"] = int(context.user_data.get("batch_sent") or 0) + 1
+            context.user_data["batch_i"] = idx + 1
+            await query.message.reply_text(f"Sent.\n{result}", disable_web_page_preview=True)
+            await _show_batch_item(update, context)
+            return
+        await query.message.reply_text(f"Unknown batch action: {action}")
         return
 
     if data.startswith("email:"):

@@ -75,6 +75,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("help", handlers.start))
     app.add_handler(CommandHandler("ping", handlers.ping))
     app.add_handler(CommandHandler("next", handlers.next_lead))
+    app.add_handler(CommandHandler("batchvm", handlers.batchvm))
     app.add_handler(CommandHandler("highscore", handlers.highscore))
     app.add_handler(CommandHandler("search", handlers.search))
     app.add_handler(CommandHandler("followups", handlers.followups))

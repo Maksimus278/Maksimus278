@@ -56,6 +56,22 @@ def search_keyboard(usdots: list[str]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
+def batch_vm_keyboard(usdot: str) -> InlineKeyboardMarkup:
+    """Manual confirm queue — one lead at a time, no blast."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("✅ Send VM + link", callback_data=f"batch:send:{usdot}"),
+                InlineKeyboardButton("⏭ Skip", callback_data="batch:skip"),
+            ],
+            [
+                InlineKeyboardButton("Open website", url=SITE_URL),
+                InlineKeyboardButton("⏹ Stop batch", callback_data="batch:stop"),
+            ],
+        ]
+    )
+
+
 def share_contact_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [[KeyboardButton("Share my phone (link Telegram id)", request_contact=True)]],
