@@ -3,6 +3,7 @@ from __future__ import annotations
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 
 from .phones import to_e164
+from .pitches import SITE_URL
 
 
 def lead_keyboard(
@@ -21,6 +22,7 @@ def lead_keyboard(
             InlineKeyboardButton("Leave VM + link", callback_data=f"vm:{usdot}"),
         ],
         [
+            InlineKeyboardButton("Open website", url=SITE_URL),
             InlineKeyboardButton("Email", callback_data=f"email:{usdot}"),
         ],
         [

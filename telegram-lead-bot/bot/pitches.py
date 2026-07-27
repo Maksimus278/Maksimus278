@@ -6,6 +6,7 @@ from .leads import Lead
 
 SITE_URL = "https://www.fleetguardlogistics.com"
 TRIAL_URL = "https://www.fleetguardlogistics.com"
+SITE_URL_SPOKEN = "w w w dot fleet guard logistics dot com"
 
 
 def _first_name(lead: Lead) -> str:
@@ -20,15 +21,16 @@ def link_sms_text(
     *,
     sender_name: str = "Your Name",
 ) -> str:
-    """Short SMS with a real clickable trial link."""
+    """Short SMS with a real clickable trial link (tap to open website)."""
     first = _first_name(lead)
     company = lead.company or lead.legal_name or "your fleet"
     dot = lead.usdot or "your DOT"
     me = (sender_name or "Your Name").strip() or "Your Name"
     return (
-        f"Hi {first}, {me} at FleetGuardAI. "
-        f"14-day trial for {company}: {SITE_URL} "
-        f"— Start Trial, add DOT {dot}."
+        f"Hi {first}, {me} at FleetGuardAI for {company}. "
+        f"Tap this link to open the website and start your 14-day trial "
+        f"(then add DOT {dot}):\n"
+        f"{SITE_URL}"
     )
 
 
@@ -37,22 +39,21 @@ def voicemail_spoken_text(
     *,
     sender_name: str = "Your Name",
 ) -> str:
-    """TTS script for a voicemail drop (URLs spoken so they can be typed)."""
+    """TTS script for a voicemail drop (points them to the SMS tap-link)."""
     first = _first_name(lead)
     company = lead.company or lead.legal_name or "your fleet"
     trucks = lead.power_units or "a few"
     dot = lead.usdot or "your D O T number"
     me = (sender_name or "Your Name").strip() or "Your Name"
-    # Spell URL for voicemail; visual voicemail may still surface the domain.
     return (
         f"Hi {first}, this is {me} with Fleet Guard A I. "
         f"Quick message for {company}, about {trucks} trucks. "
         f"We keep C D L s, medical cards, insurance, and expirations in one dashboard "
         f"so missing paperwork does not park a truck. "
-        f"Start a 14 day trial at w w w dot fleet guard logistics dot com. "
-        f"That is fleetguardlogistics.com. "
-        f"Click Start Trial and add D O T {dot}. "
-        f"Cancel before day 14 if it is not a fit. Again, fleetguardlogistics.com. Thank you."
+        f"I just texted you a link — tap that link in the text message to open our website "
+        f"and start the 14 day trial. Add D O T {dot} when you sign up. "
+        f"The site is also {SITE_URL_SPOKEN}, fleetguardlogistics.com. "
+        f"Cancel before day 14 if it is not a fit. Thank you."
     )
 
 
