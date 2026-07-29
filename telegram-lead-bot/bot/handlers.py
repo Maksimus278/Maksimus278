@@ -46,6 +46,58 @@ def _is_duplicate_action(context: ContextTypes.DEFAULT_TYPE, key: str, ttl_sec: 
     return False
 
 
+# Call / voicemail / SMS must not fire from buttons left over while the bot was offline.
+_COSTLY_PREFIXES = ("vm:", "call:", "batch:send:")
+
+
+def _is_costly_callback(data: str) -> bool:
+    return any(data.startswith(p) for p in _COSTLY_PREFIXES)
+
+
+async def _block_stale_costly_action(
+    query,
+    context: ContextTypes.DEFAULT_TYPE,
+    data: str,
+) -> bool:
+    """Return True if the costly action was blocked pending a second confirm tap.
+
+    After a Cursor/Railway restart, Telegram can still deliver old callback_query
+    presses (or the user taps an old lead card). Those must not autodial/SMS.
+    """
+    if not _is_costly_callback(data):
+        return False
+
+    boot_wall = float(context.application.bot_data.get("boot_wall", 0) or 0)
+    msg = query.message
+    msg_ts = float(msg.date.timestamp()) if msg and msg.date else 0.0
+    # Button message from a previous process, or any costly tap in the first minute online.
+    stale_message = bool(boot_wall and msg_ts and msg_ts < (boot_wall - 2))
+    in_boot_grace = bool(boot_wall and (time.time() - boot_wall) < 60)
+    if not (stale_message or in_boot_grace):
+        return False
+
+    confirm_key = f"_reconfirm_costly:{data}"
+    if context.user_data.get(confirm_key) != "armed":
+        context.user_data[confirm_key] = "armed"
+        log.warning(
+            "Blocked stale/boot costly callback user=%s data=%s msg_ts=%s boot=%s",
+            getattr(query.from_user, "id", None),
+            data,
+            msg_ts,
+            boot_wall,
+        )
+        try:
+            await msg.reply_text(
+                "Bot just restarted. Tap the same button again to confirm "
+                "this call / voicemail / SMS."
+            )
+        except TelegramError:
+            pass
+        return True
+    context.user_data.pop(confirm_key, None)
+    return False
+
+
 def allowed_only(func):
     @wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
@@ -718,6 +770,14 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     data = query.data or ""
     lead_store = store(context)
+    if data:
+        log.info(
+            "callback user=%s data=%s",
+            getattr(query.from_user, "id", None),
+            data[:80],
+        )
+    if await _block_stale_costly_action(query, context, data):
+        return
 
     if data == "cmd:next":
         leads = lead_store.next_best(1, **_truck_kwargs())

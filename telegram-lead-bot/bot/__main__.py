@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -44,6 +45,7 @@ def build_app() -> Application:
         .build()
     )
     app.bot_data["store"] = store
+    app.bot_data["boot_wall"] = time.time()
 
     async def on_error(update: object, context) -> None:
         err = context.error
