@@ -88,6 +88,56 @@ class Lead:
     def in_truck_band(self, low: int = 200, high: int = 450) -> bool:
         return low <= self.power_units <= high
 
+    def is_compliance_fleet_fit(self, min_drivers: int = 20) -> bool:
+        """True for carriers that typically need CDL / medical / insurance vaults.
+
+        Keeps for-hire and private freight fleets; drops passenger, school bus,
+        government, and obvious non-carrier company names.
+        """
+        if self.drivers < min_drivers:
+            return False
+        cd = (self.classdef or "").upper()
+        if not any(
+            token in cd
+            for token in ("AUTHORIZED FOR HIRE", "PRIVATE PROPERTY", "EXEMPT FOR HIRE")
+        ):
+            return False
+        excluded_ops = (
+            "PASSENGER",
+            "SCHOOL BUS",
+            "LOCAL GOVERNMENT",
+            "STATE GOVERNMENT",
+            "FEDERAL GOVERNMENT",
+            "TRANSIT",
+            "TAXI",
+            "LIMOUSINE",
+        )
+        if any(token in cd for token in excluded_ops):
+            return False
+        name = f"{self.company} {self.legal_name}".upper()
+        excluded_names = (
+            "BOEING",
+            "MATTRESS",
+            "HOSPITAL",
+            "UNIVERSITY",
+            "SCHOOL DISTRICT",
+            "COUNTY OF",
+            "CITY OF",
+            "POLICE",
+            "FIRE DEPART",
+            "NATURAL GAS",
+            "ELECTRIC CO",
+            "WATER AUTHORITY",
+            "TRANSIT AUTHORITY",
+            "AIR FORCE",
+            "NATIONAL GUARD",
+            "DEPARTMENT OF",
+            "SCHOOL BUS",
+        )
+        if any(token in name for token in excluded_names):
+            return False
+        return True
+
     def truck_match_label(self, target: int = 300) -> str:
         dist = self.truck_distance(target)
         if dist == 0:
@@ -380,12 +430,18 @@ class LeadStore:
         target_trucks: int = 300,
         truck_min: int = 200,
         truck_max: int = 450,
+        compliance_fleet_only: bool = True,
+        min_drivers: int = 20,
     ) -> list[Lead]:
         with self._connect() as conn:
             excluded = self._excluded_usdots(conn)
         candidates = [lead for lead in self.leads.values() if lead.usdot not in excluded]
         in_band = [lead for lead in candidates if lead.in_truck_band(truck_min, truck_max)]
         pool = in_band if in_band else candidates
+        if compliance_fleet_only:
+            fitted = [lead for lead in pool if lead.is_compliance_fleet_fit(min_drivers)]
+            if fitted:
+                pool = fitted
 
         def rank_key(lead: Lead):
             # Closest to ~300 trucks first, then better contact/fit quality
@@ -406,6 +462,8 @@ class LeadStore:
         target_trucks: int = 300,
         truck_min: int = 200,
         truck_max: int = 450,
+        compliance_fleet_only: bool = True,
+        min_drivers: int = 20,
     ) -> list[tuple[Lead, str]]:
         """Leads closest to the target truck count (~300)."""
         with self._connect() as conn:
@@ -424,6 +482,10 @@ class LeadStore:
             for lead in self.leads.values()
             if statuses.get(lead.usdot, "new") != "skipped"
         ]
+        if compliance_fleet_only:
+            fitted = [lead for lead in pool if lead.is_compliance_fleet_fit(min_drivers)]
+            if fitted:
+                pool = fitted
 
         def rank_key(lead: Lead):
             return (

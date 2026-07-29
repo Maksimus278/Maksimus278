@@ -216,6 +216,8 @@ def _truck_kwargs() -> dict:
         "target_trucks": config.TARGET_TRUCKS,
         "truck_min": config.TARGET_TRUCK_MIN,
         "truck_max": config.TARGET_TRUCK_MAX,
+        "compliance_fleet_only": config.COMPLIANCE_FLEET_ONLY,
+        "min_drivers": config.MIN_DRIVERS_FOR_COMPLIANCE,
     }
 
 
@@ -308,7 +310,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "FleetGuard lead bot ready.\n\n"
         f"Loaded {stats['total_leads']:,} leads from CSV.\n"
         f"Priority target: fleets with ~{config.TARGET_TRUCKS} trucks "
-        f"({config.TARGET_TRUCK_MIN}–{config.TARGET_TRUCK_MAX}).\n\n"
+        f"({config.TARGET_TRUCK_MIN}–{config.TARGET_TRUCK_MAX}).\n"
+        f"Filter: CDL/medical/insurance fleets only "
+        f"({'ON' if config.COMPLIANCE_FLEET_ONLY else 'OFF'}, "
+        f"min {config.MIN_DRIVERS_FOR_COMPLIANCE} drivers).\n\n"
         "Commands:\n"
         "/ping — check bot is alive\n"
         "/next — next best ~300-truck lead + pitch\n"

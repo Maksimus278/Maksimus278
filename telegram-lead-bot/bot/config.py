@@ -74,6 +74,14 @@ TARGET_TRUCKS = int(os.getenv("TARGET_TRUCKS", "300"))
 TARGET_TRUCK_MIN = int(os.getenv("TARGET_TRUCK_MIN", "200"))
 TARGET_TRUCK_MAX = int(os.getenv("TARGET_TRUCK_MAX", "450"))
 
+# Prefer carriers that need CDL / medical / insurance document vaults
+COMPLIANCE_FLEET_ONLY = os.getenv("COMPLIANCE_FLEET_ONLY", "1").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+}
+MIN_DRIVERS_FOR_COMPLIANCE = int(os.getenv("MIN_DRIVERS_FOR_COMPLIANCE", "20"))
+
 # Optional Twilio click-to-call (human initiates each call — not autodial)
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "").strip()
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
