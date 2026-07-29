@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from functools import wraps
@@ -262,44 +263,36 @@ async def _send_vm_and_link(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     return " · ".join(bits)
 
 
-async def _show_batch_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _show_batch_summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     queue: list[str] = list(context.user_data.get("batch_queue") or [])
-    idx = int(context.user_data.get("batch_i") or 0)
-    sent = int(context.user_data.get("batch_sent") or 0)
-    skipped = int(context.user_data.get("batch_skipped") or 0)
     msg = update.effective_message
     if update.callback_query and update.callback_query.message:
         msg = update.callback_query.message
     if not msg:
         return
+    if not queue:
+        await msg.reply_text("Batch queue empty. Start with /batchvm")
+        return
 
-    if idx >= len(queue):
-        context.user_data.pop("batch_queue", None)
-        await msg.reply_text(
-            f"Batch done.\nSent: {sent}\nSkipped: {skipped}\nTotal in queue: {len(queue)}\n"
-            f"Start another: /batchvm {BATCH_VM_DEFAULT}"
+    lead_store = store(context)
+    lines = [
+        f"Batch VM queue: {len(queue)} leads\n"
+        f"One tap sends voicemail + SMS link to ALL of them.\n"
+    ]
+    for i, usdot in enumerate(queue, 1):
+        lead = lead_store.get_lead(usdot)
+        if not lead:
+            lines.append(f"{i}. DOT {usdot} (missing)")
+            continue
+        phone = to_e164(lead.phone) or lead.phone or "no phone"
+        lines.append(
+            f"{i}. {lead.company} · {lead.power_units}t · {phone}"
         )
-        return
-
-    usdot = queue[idx]
-    lead = store(context).get_lead(usdot)
-    if not lead:
-        context.user_data["batch_i"] = idx + 1
-        await _show_batch_item(update, context)
-        return
-
-    phone = to_e164(lead.phone) or lead.phone or "no phone"
-    text = (
-        f"Batch VM queue {idx + 1}/{len(queue)}\n"
-        f"Sent {sent} · Skipped {skipped}\n\n"
-        f"{lead.company}\n"
-        f"DOT {lead.usdot} · {lead.power_units} trucks\n"
-        f"{lead.city}, {lead.state}\n"
-        f"Ask for: {lead.officer or 'owner / safety / compliance'}\n"
-        f"Phone: {phone}\n\n"
-        f"Confirm to send voicemail + SMS link to THIS lead only."
-    )
-    await msg.reply_text(text, reply_markup=batch_vm_keyboard(usdot))
+    # Telegram message limit ~4096
+    text = "\n".join(lines)
+    if len(text) > 3800:
+        text = "\n".join(lines[:25]) + f"\n… and {len(queue) - 24} more"
+    await msg.reply_text(text, reply_markup=batch_vm_keyboard(len(queue)))
 
 
 @allowed_only
@@ -319,7 +312,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Commands:\n"
         "/ping — check bot is alive\n"
         "/next — next best ~300-truck lead + pitch\n"
-        "/batchvm [n] — queue up to 20 leads; confirm VM+SMS one by one\n"
+        "/batchvm [n] — queue up to 20 leads; one button sends all VM+SMS\n"
         "/highscore — fleets closest to ~300 trucks\n"
         "/search <query> — find a company / DOT / city\n"
         "/followups — who needs follow-up\n"
@@ -350,7 +343,7 @@ async def next_lead(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 @allowed_only
 async def batchvm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Queue N leads for manual VM+SMS confirm (max 20). Not a blast."""
+    """Queue N leads (max 20) and show one Send-all button."""
     if not twilio_configured():
         await update.effective_message.reply_text(
             "Twilio not configured. Set TWILIO_* env vars first."
@@ -368,7 +361,6 @@ async def batchvm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     n = max(1, min(n, BATCH_VM_MAX))
 
     lead_store = store(context)
-    # Pull extras so we can skip leads without phones
     pool = lead_store.next_best(max(n * 8, 40), **_truck_kwargs())
     queue: list[str] = []
     for lead in pool:
@@ -383,15 +375,8 @@ async def batchvm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     context.user_data["batch_queue"] = queue
-    context.user_data["batch_i"] = 0
-    context.user_data["batch_sent"] = 0
-    context.user_data["batch_skipped"] = 0
-    await update.effective_message.reply_text(
-        f"Batch VM queue ready: {len(queue)} leads.\n"
-        f"You confirm each one — no auto-blast.\n"
-        f"Send = voicemail + SMS link · Skip = next · Stop = end."
-    )
-    await _show_batch_item(update, context)
+    context.user_data["batch_busy"] = False
+    await _show_batch_summary(update, context)
 
 
 @allowed_only
@@ -837,35 +822,56 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if data.startswith("batch:"):
         action = data.split(":", 1)[1]
         if action == "stop":
-            queue = context.user_data.get("batch_queue") or []
-            sent = int(context.user_data.get("batch_sent") or 0)
-            skipped = int(context.user_data.get("batch_skipped") or 0)
             context.user_data.pop("batch_queue", None)
-            await query.message.reply_text(
-                f"Batch stopped.\nSent: {sent}\nSkipped: {skipped}\n"
-                f"Queued was: {len(queue)}\nResume with /batchvm"
-            )
+            context.user_data["batch_busy"] = False
+            await query.message.reply_text("Batch cancelled.")
             return
-        if action == "skip":
-            context.user_data["batch_skipped"] = int(context.user_data.get("batch_skipped") or 0) + 1
-            context.user_data["batch_i"] = int(context.user_data.get("batch_i") or 0) + 1
-            await query.message.reply_text("Skipped.")
-            await _show_batch_item(update, context)
-            return
-        if action.startswith("send:"):
-            usdot = action.split(":", 1)[1]
-            if _is_duplicate_action(context, f"batchsend:{usdot}", ttl_sec=12.0):
+        if action == "sendall":
+            if context.user_data.get("batch_busy"):
+                await query.message.reply_text("Batch already running…")
+                return
+            if _is_duplicate_action(context, "batch:sendall", ttl_sec=30.0):
                 return
             queue = list(context.user_data.get("batch_queue") or [])
-            idx = int(context.user_data.get("batch_i") or 0)
-            if not queue or idx >= len(queue) or queue[idx] != usdot:
-                await query.message.reply_text("Batch out of sync. Start again with /batchvm")
+            if not queue:
+                await query.message.reply_text("Queue empty. Send /batchvm 20")
                 return
-            result = await _send_vm_and_link(update, context, usdot)
-            context.user_data["batch_sent"] = int(context.user_data.get("batch_sent") or 0) + 1
-            context.user_data["batch_i"] = idx + 1
-            await query.message.reply_text(f"Sent.\n{result}", disable_web_page_preview=True)
-            await _show_batch_item(update, context)
+            context.user_data["batch_busy"] = True
+            await query.message.reply_text(
+                f"Sending VM + SMS to {len(queue)} leads…\n"
+                f"(~2s pause between each to avoid Twilio limits)"
+            )
+            ok = 0
+            fail = 0
+            lines: list[str] = []
+            try:
+                for i, usdot in enumerate(queue, 1):
+                    result = await _send_vm_and_link(update, context, usdot)
+                    bad = (
+                        "Voicemail:" in result
+                        or "SMS:" in result
+                        or "no phone" in result
+                        or "not configured" in result
+                        or "not found" in result.lower()
+                    )
+                    if bad:
+                        fail += 1
+                    else:
+                        ok += 1
+                    lines.append(f"{i}/{len(queue)} {result}")
+                    if i % 5 == 0 or i == len(queue):
+                        chunk = "\n".join(lines[-5:])
+                        await query.message.reply_text(chunk, disable_web_page_preview=True)
+                    if i < len(queue):
+                        await asyncio.sleep(2.0)
+            finally:
+                context.user_data.pop("batch_queue", None)
+                context.user_data["batch_busy"] = False
+            await query.message.reply_text(
+                f"Batch finished.\nAttempted: {len(queue)}\n"
+                f"Done: {ok} · Issues noted: {fail}\n"
+                f"Next: /batchvm 20"
+            )
             return
         await query.message.reply_text(f"Unknown batch action: {action}")
         return

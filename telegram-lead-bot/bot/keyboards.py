@@ -56,17 +56,18 @@ def search_keyboard(usdots: list[str]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
-def batch_vm_keyboard(usdot: str) -> InlineKeyboardMarkup:
-    """Manual confirm queue — one lead at a time, no blast."""
+def batch_vm_keyboard(count: int) -> InlineKeyboardMarkup:
+    """One-tap send for the whole queued batch (max 20)."""
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("✅ Send VM + link", callback_data=f"batch:send:{usdot}"),
-                InlineKeyboardButton("⏭ Skip", callback_data="batch:skip"),
+                InlineKeyboardButton(
+                    f"✅ Send all {count} VM + SMS",
+                    callback_data="batch:sendall",
+                ),
             ],
             [
-                InlineKeyboardButton("Open website", url=SITE_URL),
-                InlineKeyboardButton("⏹ Stop batch", callback_data="batch:stop"),
+                InlineKeyboardButton("Cancel", callback_data="batch:stop"),
             ],
         ]
     )
