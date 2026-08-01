@@ -8,6 +8,7 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler, Mess
 
 from . import config
 from . import handlers
+from .health import start_health_server
 from .leads import LeadStore
 
 LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
@@ -93,6 +94,7 @@ def build_app() -> Application:
 
 
 def main() -> None:
+    start_health_server()
     if not config.TELEGRAM_BOT_TOKEN or "ABC-DEF" in config.TELEGRAM_BOT_TOKEN:
         raise SystemExit(
             "TELEGRAM_BOT_TOKEN is missing or still a placeholder. "
