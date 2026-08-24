@@ -1,0 +1,24 @@
+services:
+  - type: worker
+    name: fleetguard-telegram-bot
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    autoDeploy: true
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_ALLOWED_USER_IDS
+        value: "7889069727,8724669761"
+      - key: TELEGRAM_ALLOWED_USERNAMES
+        value: mixerius
+      - key: LEADS_CSV_PATH
+        value: data/fleetguard-leads.csv
+      - key: LEADS_DB_PATH
+        value: data/leads_state.db
+      - key: TARGET_TRUCKS
+        value: "300"
+      - key: TARGET_TRUCK_MIN
+        value: "200"
+      - key: TARGET_TRUCK_MAX
+        value: "450"
