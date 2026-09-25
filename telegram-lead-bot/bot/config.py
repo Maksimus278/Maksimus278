@@ -48,16 +48,13 @@ if OWNER_FILE.exists():
             ALLOWED_USER_IDS.add(int(line))
 
 
-def _persist_owner_id(user_id: int) -> None:
-    OWNER_FILE.parent.mkdir(parents=True, exist_ok=True)
-    existing: set[str] = set()
-    if OWNER_FILE.exists():
-        existing = {ln.strip() for ln in OWNER_FILE.read_text(encoding="utf-8").splitlines() if ln.strip()}
-    existing.add(str(user_id))
-    OWNER_FILE.write_text("\n".join(sorted(existing)) + "\n", encoding="utf-8")
+def _default_leads_csv() -> Path:
+    full = ROOT / "data" / "fleetguard-leads.csv"
+    sample = ROOT / "data" / "fleetguard-leads.sample.csv"
+    return full if full.exists() else sample
 
 
-LEADS_CSV_PATH = Path(os.getenv("LEADS_CSV_PATH", str(ROOT / "data" / "fleetguard-leads.csv")))
+LEADS_CSV_PATH = Path(os.getenv("LEADS_CSV_PATH", str(_default_leads_csv())))
 if not LEADS_CSV_PATH.is_absolute():
     LEADS_CSV_PATH = ROOT / LEADS_CSV_PATH
 
@@ -74,13 +71,14 @@ TARGET_TRUCKS = int(os.getenv("TARGET_TRUCKS", "300"))
 TARGET_TRUCK_MIN = int(os.getenv("TARGET_TRUCK_MIN", "200"))
 TARGET_TRUCK_MAX = int(os.getenv("TARGET_TRUCK_MAX", "450"))
 
-# Prefer carriers that need CDL / medical / insurance document vaults
-COMPLIANCE_FLEET_ONLY = os.getenv("COMPLIANCE_FLEET_ONLY", "1").strip().lower() not in {
+# Default to broad results so the bot still shows real fleet leads even if the CSV
+# uses a looser classification or the user has not set env vars yet.
+COMPLIANCE_FLEET_ONLY = os.getenv("COMPLIANCE_FLEET_ONLY", "0").strip().lower() not in {
     "0",
     "false",
     "no",
 }
-MIN_DRIVERS_FOR_COMPLIANCE = int(os.getenv("MIN_DRIVERS_FOR_COMPLIANCE", "20"))
+MIN_DRIVERS_FOR_COMPLIANCE = int(os.getenv("MIN_DRIVERS_FOR_COMPLIANCE", "0"))
 
 # Optional Twilio click-to-call (human initiates each call — not autodial)
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "").strip()
@@ -116,3 +114,12 @@ def is_allowed(user_id: int, username: str | None = None) -> bool:
         _persist_owner_id(user_id)
         return True
     return claim_owner(user_id)
+
+
+def _persist_owner_id(user_id: int) -> None:
+    OWNER_FILE.parent.mkdir(parents=True, exist_ok=True)
+    existing: set[str] = set()
+    if OWNER_FILE.exists():
+        existing = {ln.strip() for ln in OWNER_FILE.read_text(encoding="utf-8").splitlines() if ln.strip()}
+    existing.add(str(user_id))
+    OWNER_FILE.write_text("\n".join(sorted(existing)) + "\n", encoding="utf-8")
