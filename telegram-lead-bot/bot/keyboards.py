@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import quote
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 
 from .phones import to_e164
@@ -17,34 +19,50 @@ def lead_keyboard(
             InlineKeyboardButton("Copy SMS", callback_data=f"copy:{usdot}"),
             InlineKeyboardButton("Save / Message", callback_data=f"contact:{usdot}"),
         ],
-        [
-            InlineKeyboardButton("Call now", callback_data=f"call:{usdot}"),
-            InlineKeyboardButton("Leave VM + link", callback_data=f"vm:{usdot}"),
-        ],
-        [
-            InlineKeyboardButton("Open website", url=SITE_URL),
-            InlineKeyboardButton("Email", callback_data=f"email:{usdot}"),
-        ],
-        [
-            InlineKeyboardButton("Add Telegram", callback_data=f"addtg:{usdot}")
-            if not telegram_username
-            else InlineKeyboardButton("Telegram", url=f"https://t.me/{telegram_username.lstrip('@')}"),
-        ],
-        [
-            InlineKeyboardButton("Contacted", callback_data=f"status:contacted:{usdot}"),
-            InlineKeyboardButton("Interested", callback_data=f"status:interested:{usdot}"),
-        ],
-        [
-            InlineKeyboardButton("Follow Up", callback_data=f"status:follow_up:{usdot}"),
-            InlineKeyboardButton("Skip", callback_data=f"status:skipped:{usdot}"),
-        ],
-        [
-            InlineKeyboardButton("Next lead", callback_data="cmd:next"),
-            InlineKeyboardButton("Pitch again", callback_data=f"pitch:{usdot}"),
-        ],
     ]
-    # If we somehow get http phone links later, keep structure simple.
-    _ = to_e164(phone)
+
+    # Opens the user's native SMS app using their regular phone number.
+    # This does not use Twilio or spend bot/Twilio funds.
+    phone_number = to_e164(phone)
+    if phone_number:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    "📱 Text from my phone",
+                    url=f"sms:{phone_number}",
+                ),
+            ]
+        )
+
+    rows.extend(
+        [
+            [
+                InlineKeyboardButton("Call now", callback_data=f"call:{usdot}"),
+                InlineKeyboardButton("Leave VM + link", callback_data=f"vm:{usdot}"),
+            ],
+            [
+                InlineKeyboardButton("Open website", url=SITE_URL),
+                InlineKeyboardButton("Email", callback_data=f"email:{usdot}"),
+            ],
+            [
+                InlineKeyboardButton("Add Telegram", callback_data=f"addtg:{usdot}")
+                if not telegram_username
+                else InlineKeyboardButton("Telegram", url=f"https://t.me/{telegram_username.lstrip('@')}"),
+            ],
+            [
+                InlineKeyboardButton("Contacted", callback_data=f"status:contacted:{usdot}"),
+                InlineKeyboardButton("Interested", callback_data=f"status:interested:{usdot}"),
+            ],
+            [
+                InlineKeyboardButton("Follow Up", callback_data=f"status:follow_up:{usdot}"),
+                InlineKeyboardButton("Skip", callback_data=f"status:skipped:{usdot}"),
+            ],
+            [
+                InlineKeyboardButton("Next lead", callback_data="cmd:next"),
+                InlineKeyboardButton("Pitch again", callback_data=f"pitch:{usdot}"),
+            ],
+        ]
+    )
     return InlineKeyboardMarkup(rows)
 
 
