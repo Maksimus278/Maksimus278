@@ -34,6 +34,35 @@ _EXCLUDED_FROM_NEXT = (
 )
 
 
+def _company_key(company: str, legal_name: str = "") -> str:
+    """Normalize names so same company across multiple DOT rows only appears once."""
+    name = f"{company} {legal_name}".strip().lower()
+    # keep only letters/numbers so subsidiaries / punctuation / whitespace variations
+    # collapse to the same identity.
+    normalized = "".join(ch if ch.isalnum() else " " for ch in name)
+    return " ".join(normalized.split())
+
+
+def _dedupe_by_company(leads: Iterable["Lead"]) -> list["Lead"]:
+    """Keep the strongest lead per company, preventing repeated company names."""
+    best_by_company: dict[str, "Lead"] = {}
+    for lead in leads:
+        key = _company_key(lead.company, lead.legal_name)
+        if not key:
+            best_by_company.setdefault(lead.usdot, lead)
+            continue
+        current = best_by_company.get(key)
+        if current is None or (
+            lead.effective_score > current.effective_score
+            or (
+                lead.effective_score == current.effective_score
+                and lead.truck_distance() < current.truck_distance()
+            )
+        ):
+            best_by_company[key] = lead
+    return list(best_by_company.values())
+
+
 @dataclass(frozen=True)
 class Lead:
     usdot: str
@@ -272,8 +301,6 @@ class LeadStore:
                 )
                 """
             )
-            # Backfill: past "viewed" events must become excluded, otherwise
-            # /next forever returns the same top ~300-truck lead.
             conn.execute(
                 """
                 INSERT OR IGNORE INTO lead_state
@@ -443,8 +470,11 @@ class LeadStore:
             if fitted:
                 pool = fitted
 
+        # Prevent the same company from resurfacing repeatedly when multiple USDOT rows
+        # exist for the same fleet. Keep the strongest lead per normalized company name.
+        pool = _dedupe_by_company(pool)
+
         def rank_key(lead: Lead):
-            # Closest to ~300 trucks first, then better contact/fit quality
             return (
                 lead.truck_distance(target_trucks),
                 -lead.effective_score,
@@ -486,6 +516,7 @@ class LeadStore:
             fitted = [lead for lead in pool if lead.is_compliance_fleet_fit(min_drivers)]
             if fitted:
                 pool = fitted
+        pool = _dedupe_by_company(pool)
 
         def rank_key(lead: Lead):
             return (
@@ -523,7 +554,8 @@ class LeadStore:
             boost = 20 if lead.company.lower().startswith(q) else 0
             hits.append((lead.effective_score + boost, lead))
         hits.sort(key=lambda item: (-item[0], item[1].company))
-        return [lead for _, lead in hits[:limit]]
+        deduped = _dedupe_by_company(lead for _, lead in hits)
+        return deduped[:limit]
 
     def followups_due(self, limit: int = 20) -> list[tuple[Lead, sqlite3.Row]]:
         now = datetime.now(timezone.utc).isoformat()
@@ -548,7 +580,6 @@ class LeadStore:
                 """,
                 (limit,),
             ).fetchall()
-        # Prefer due items; if none due yet, show upcoming follow-ups
         chosen = rows if rows else upcoming
         out: list[tuple[Lead, sqlite3.Row]] = []
         for row in chosen:
@@ -622,7 +653,6 @@ class LeadStore:
         if telegram_user_id is None and not telegram_username:
             raise ValueError("Provide a Telegram user id or @username")
         username = telegram_username.lstrip("@").strip()
-        # Auto-attach first matching lead USDOT if not provided
         if not usdot:
             matches = self.find_leads_by_phone(phone_norm, limit=1)
             if matches:
@@ -672,7 +702,6 @@ class LeadStore:
         for row in rows:
             if row["phone_norm"] in keys or phones_equal(row["display_phone"], phone):
                 return row
-            # also compare normalized forms
             if phone_match_keys(row["phone_norm"]) & keys:
                 return row
         return None
