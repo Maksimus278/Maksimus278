@@ -37,8 +37,6 @@ _EXCLUDED_FROM_NEXT = (
 def _company_key(company: str, legal_name: str = "") -> str:
     """Normalize names so same company across multiple DOT rows only appears once."""
     name = f"{company} {legal_name}".strip().lower()
-    # keep only letters/numbers so subsidiaries / punctuation / whitespace variations
-    # collapse to the same identity.
     normalized = "".join(ch if ch.isalnum() else " " for ch in name)
     return " ".join(normalized.split())
 
@@ -247,6 +245,12 @@ class LeadStore:
         conn.execute("PRAGMA busy_timeout=30000")
         return conn
 
+    def _reset_progress(self) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM lead_state")
+            conn.execute("DELETE FROM events")
+            conn.commit()
+
     def _init_db(self) -> None:
         with self._connect() as conn:
             conn.execute(
@@ -412,7 +416,6 @@ class LeadStore:
             conn.commit()
 
     def mark_viewed(self, usdot: str) -> None:
-        """Mark lead shown so /next advances to a different company."""
         now = self._now()
         with self._connect() as conn:
             existing = conn.execute(
@@ -463,6 +466,14 @@ class LeadStore:
         with self._connect() as conn:
             excluded = self._excluded_usdots(conn)
         candidates = [lead for lead in self.leads.values() if lead.usdot not in excluded]
+
+        if not candidates and len(self.leads) > 0:
+            with self._connect() as conn:
+                total_rows = conn.execute("SELECT COUNT(*) AS n FROM lead_state").fetchone()["n"]
+                if total_rows >= len(self.leads):
+                    self._reset_progress()
+                    candidates = list(self.leads.values())
+
         in_band = [lead for lead in candidates if lead.in_truck_band(truck_min, truck_max)]
         pool = in_band if in_band else candidates
         if compliance_fleet_only:
@@ -470,8 +481,6 @@ class LeadStore:
             if fitted:
                 pool = fitted
 
-        # Prevent the same company from resurfacing repeatedly when multiple USDOT rows
-        # exist for the same fleet. Keep the strongest lead per normalized company name.
         pool = _dedupe_by_company(pool)
 
         def rank_key(lead: Lead):
@@ -495,7 +504,6 @@ class LeadStore:
         compliance_fleet_only: bool = True,
         min_drivers: int = 20,
     ) -> list[tuple[Lead, str]]:
-        """Leads closest to the target truck count (~300)."""
         with self._connect() as conn:
             statuses = {
                 r["usdot"]: r["status"]
@@ -783,7 +791,6 @@ class LeadStore:
         telegram_user_id: int,
         fallback_name: str = "",
     ) -> tuple[str, str]:
-        """Return (display_name, phone) for pitch personalization."""
         row = self.get_sender_profile(telegram_user_id)
         name = (row["display_name"] if row else "") or (fallback_name or "").strip() or "Your Name"
         phone = (row["phone"] if row else "") or "Your Number"
