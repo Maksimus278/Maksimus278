@@ -1,0 +1,10 @@
+.venv
+.env
+logs
+__pycache__
+*.pyc
+data/*.db
+data/*.db-*
+data/allowed_owner.txt
+tests
+.git

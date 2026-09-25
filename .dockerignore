@@ -1,0 +1,11 @@
+**/.venv
+**/.env
+**/logs
+**/__pycache__
+**/*.pyc
+**/*.db
+**/*.db-*
+.git
+**/tests
+**/data/allowed_owner.txt
+**/data/leads_state.db*

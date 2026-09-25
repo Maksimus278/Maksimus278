@@ -1,0 +1,12 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+data/leads_state.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+data/allowed_owner.txt
+.DS_Store
+*.log
+logs/
